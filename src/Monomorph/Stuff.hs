@@ -8,7 +8,7 @@
 ----------------------------------------------------------------------
 -- |
 -- Module      :  Monomorph.Stuff
--- Copyright   :  (c) 2015 Conal Elliott
+-- Copyright   :  (c) 2016 Conal Elliott
 -- License     :  BSD3
 --
 -- Maintainer  :  conal@conal.net
@@ -43,6 +43,8 @@ import HERMIT.Name (HermitName)
 import HERMIT.Monad (getModGuts,getHscEnv)
 
 import HERMIT.Extras
+
+-- import Circat.Rep
 
 -- TODO: Trim imports
 
@@ -122,20 +124,12 @@ abstReprR = do meth <- hasRepMethodT . exprTypeT
 #if 0
 
 standardizeCase :: ReExpr
-#if 0
-standardizeCase =
-     caseReduceR True
-  <+ caseReduceUnfoldR True
-  <+ caseFloatCaseR
-  <+ onScrutineeR (unfoldMethodR . watchR "abstReprR" abstReprR)
-#else
 standardizeCase =
     ( caseReduceR True <+
       ( anytdE ((onCaseAlts . onAltRhs) (caseReduceR True <+ caseReduceUnfoldR True))
       . anytdE caseFloatCaseR ) )
   . onScrutineeR (unfoldMethodR . watchR "abstReprR" abstReprR)
 -- TODO: Will I need caseReduceUnfoldR twice?
-#endif
 
 -- For experimentation
 standardizeCase' :: ReExpr
@@ -144,7 +138,6 @@ standardizeCase' =
   . anytdE ((onCaseAlts . onAltRhs) (caseReduceR True <+ caseReduceUnfoldR True))
   . anytdE caseFloatCaseR
   . onScrutineeR (unfoldMethodR . watchR "abstReprR" abstReprR)
-
 
 onScrutineeR :: Unop ReExpr
 onScrutineeR r = caseAllR r id id (const id)
@@ -169,5 +162,5 @@ plugin = hermitPlugin (pass 0 . interactive externals)
 
 externals :: [External]
 externals =
-    [ externC "abstRepr" abstReprR "..."
+    [ externC "abst-repr" abstReprR "..."
     ]

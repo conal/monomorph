@@ -20,8 +20,12 @@ source-repository head
 Library
   hs-Source-Dirs:      src
   Extensions:
-  Build-Depends:       base<5, hermit-extras >= 0.4.0
+  Build-Depends:       base<5
+                     , containers
+                     , hermit >= 1.0.0.1
+                     , hermit-extras >= 0.4.0
+                     , circat
   Exposed-Modules:
-    Monomorph.Stuff     
+                       Monomorph.Stuff     
                        
   ghc-options:         -Wall
