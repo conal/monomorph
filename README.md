@@ -1,1 +1,2 @@
-Rebuilding my Haskell-to-hardware compiler.
+A GHC plugin for monomorphization.
+
