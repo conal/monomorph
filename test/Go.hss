@@ -29,7 +29,7 @@ set-pp-coercion Show
 -- TODO: replace bash with simpler steps:
 -- case-float-case, inline-worker, case-reduce
 
-rhs-of 'sumT4
+rhs-of 'sumT1
 
 -- standardize-con
 -- bash

@@ -180,7 +180,7 @@ standardizeCon = watchR "standardizeCon" (tryR bashE . go)
 
 unfoldNonPrim :: ReExpr
 unfoldNonPrim =
-  unfoldNonPrim <+ (castAllR unfoldNonPrim id . castFloatApps)
+  unfoldNonPrim' <+ (castAllR unfoldNonPrim' id . castFloatApps)
 
 unfoldNonPrim' :: ReExpr
 unfoldNonPrim' = watchR "unfoldNonPrim" $
