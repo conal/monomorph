@@ -3,8 +3,25 @@ HERM = hermit Examples.hs -v0 -opt=Monomorph.Stuff
 go:
 	$(HERM) Go.hss
 
+go-done:
+	echo "" | make go ; echo
+
+go-resume:
+	$(HERM) Go.hss resume
+
 bare:
 	$(HERM)
+
+compile-mono:
+	cd .. ; make
+
+compile-circat:
+	cd ~/Tabula/Haskell/circat ; make
+
+compile-extras:
+	cd ~/Tabula/Haskell/hermit-extras ; make
+
+compile-all: compile-circat compile-extras compile-mono
 
 # doit:
 # 	time $(HERM) Go.hss resume && ./Example

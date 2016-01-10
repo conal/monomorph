@@ -21,7 +21,7 @@ module Monomorph.Stuff where
 
 -- TODO: explicit exports
 
-import Prelude hiding (id,(.),(>>))
+import Prelude hiding (id,(.))
 import qualified Prelude
 
 import Control.Category (id,(.))
@@ -30,6 +30,7 @@ import Control.Applicative ((<*>))
 import Control.Arrow (arr)
 -- import Control.Monad (unless)
 import Data.List (isPrefixOf)
+import qualified Data.Set as S
 import qualified Data.Map as M
 import Data.String (fromString)
 
@@ -49,11 +50,21 @@ import HERMIT.Extras
 -- TODO: Trim imports
 
 {--------------------------------------------------------------------
+    GHC and HERMIT utilities to be moved to HERMIT.Extras
+--------------------------------------------------------------------}
+
+onScrutineeR :: Unop ReExpr
+onScrutineeR r = caseAllR r id id (const id)
+
+bashWith :: [ReExpr] -> ReExpr
+bashWith rs = bashExtendedWithE (promoteR <$> rs)
+
+{--------------------------------------------------------------------
     Observing
 --------------------------------------------------------------------}
 
 observing :: Observing
-observing = True
+observing = False
 
 -- #define LintDie
 
@@ -88,14 +99,22 @@ closedType = isEmptyVarSet . tyVarsOfType
 
 hasRepMethodF :: TransformH Type (String -> TransformH a CoreExpr)
 hasRepMethodF =
+  prefixFailMsg "hasRepMethodF failed: " $
   do ty <- id
      -- The following check avoids a problem in buildDictionary.
+     guardMsg (not (isEqPred ty)) "Predicate type"  -- *
      guardMsg (closedType ty) "Type has free variables"
      hasRepTc <- findTyConT (repName "HasRep")
-     dict  <- buildDictionaryT $* TyConApp hasRepTc [ty]
+     dict  <- prefixFailMsg "Couldn't build dictionary." $
+              buildDictionaryT $* TyConApp hasRepTc [ty]
      repTc <- findTyConT (repName "Rep")
-     (mkEqBox -> eq,ty') <- normaliseTypeT Nominal $* TyConApp repTc [ty]
-     return $ \ meth -> apps' (repName meth) [ty] [dict,Type ty',eq]
+     (mkEqBox -> eq,ty') <- prefixFailMsg "normaliseTypeT failed: "$
+                            normaliseTypeT Nominal $* TyConApp repTc [ty]
+     return $ \ meth -> prefixFailMsg "apps' failed: " $
+                        apps' (repName meth) [ty] [dict,Type ty',eq]
+
+-- * I don't know why I need this test. Equality (a ~ b) types were somehow
+-- squeaking through. Perhaps a bug in buildDictionaryT.
 
 hasRepMethodT :: TransformH Type (String -> ReExpr)
 hasRepMethodT = (\ f -> \ s -> App <$> f s <*> id) <$> hasRepMethodF
@@ -105,53 +124,117 @@ hasRepMethod meth = hasRepMethodF >>= ($ meth)
 
 -- TODO: Rethink these three names
 
--- | e ==> abst (repr e).  In Core, abst is
+-- In Core, abst is
 -- abst ty $hasRepTy ty' (Eq# * ty' (Rep ty) (sym (co :: Rep ty ~ ty'))),
 -- where e :: ty, and co normalizes Rep ty to ty'.
-abstReprR :: ReExpr
-abstReprR = do meth <- hasRepMethodT . exprTypeT
-               meth "abst" . meth "repr"
 
--- -- Do one unfolding, and then a second one only if the function name starts with
--- -- "$", as in the case of a method lifted to the top level.
--- unfoldMethodR :: ReExpr
--- unfoldMethodR = watchR "unfoldMethodR" $
---     tryR (tryR simplifyAll . unfoldPredR (\ v _ -> isPrefixOf "$" (uqVarName v)))
---   . (tryR simplifyAll . unfoldR)
+-- | e ==> abst (repr e).
+abstRepr :: ReExpr
+abstRepr = -- watchR "abstRepr" $
+           do meth <- hasRepMethodT . exprTypeT
+              meth "abst" . meth "repr"
 
--- unfoldMethodR = repeatR (tryR simplifyAll . unfoldR)
+-- | e ==> abst' (repr e).
+abst'Repr :: ReExpr
+abst'Repr = -- watchR "abst'Repr" $
+            do meth <- hasRepMethodT . exprTypeT
+               meth "abst'" . meth "repr"
 
-#if 0
+-- | e ==> abst (repr' e).
+abstRepr' :: ReExpr
+abstRepr' = -- watchR "abstRepr'" $
+            do meth <- hasRepMethodT . exprTypeT
+               meth "abst" . meth "repr'"
 
+-- Do one unfolding, and then a second one only if the inlining result is a
+-- worker, as in the case of a method lifted to the top level.
+unfoldMethod :: ReExpr
+unfoldMethod = -- watchR "unfoldMethod" $
+    tryR unfoldDollar
+  . (tryR simplifyE . unfoldR)
+
+-- Move to hermit-extras
+unfoldDollar :: ReExpr
+unfoldDollar = unfoldPredR (\ v _ -> isPrefixOf "$" (uqVarName v))
+
+-- Simplified version, leaving more work for another pass.
 standardizeCase :: ReExpr
-standardizeCase =
-    ( caseReduceR True <+
-      ( anytdE ((onCaseAlts . onAltRhs) (caseReduceR True <+ caseReduceUnfoldR True))
-      . anytdE caseFloatCaseR ) )
-  . onScrutineeR (unfoldMethodR . watchR "abstReprR" abstReprR)
--- TODO: Will I need caseReduceUnfoldR twice?
+standardizeCase = watchR "standardizeCase" $
+ tryR bashE .
+ onScrutineeR (appAllR unfoldMethod id . abstRepr')
+ -- onScrutineeR (unfoldMethod . abstRepr')  -- also fine
 
--- For experimentation
-standardizeCase' :: ReExpr
-standardizeCase' =
-    id
-  . anytdE ((onCaseAlts . onAltRhs) (caseReduceR True <+ caseReduceUnfoldR True))
-  . anytdE caseFloatCaseR
-  . onScrutineeR (unfoldMethodR . watchR "abstReprR" abstReprR)
-
-onScrutineeR :: Unop ReExpr
-onScrutineeR r = caseAllR r id id (const id)
-
+-- Prepare to eliminate non-standard constructor applications (fully saturated).
 standardizeCon :: ReExpr
-standardizeCon = go . rejectR isType
+standardizeCon = watchR "standardizeCon" (tryR bashE . go)
  where
-   -- Handle both saturated and unsaturated constructors
-   go =  (appAllR id unfoldMethodR . (void callDataConT >> abstReprR))
-      <+ (lamAllR id standardizeCon . etaExpandR "eta")
+   go = doit <+ (lamAllR id go . etaExpandR "eta")
+   doit = appAllR id (appAllR unfoldMethod id)
+        . (callDataConT >> abst'Repr)
 
--- etaExpandR dies on Type t. Avoided via rejectR isType
+-- TODO: somehow prevent standardizeCase and standardizeCon from looping.
+-- Must I explicitly add other transformations?
 
-#endif
+-- For now, I'm simplifying after standardizeCon and standardizeCase, for easier
+-- inspection.
+
+-- To do: check that the transformations accomplished their goal (which will
+-- require simplification).
+
+unfoldNonPrim :: ReExpr
+unfoldNonPrim = watchR "unfoldNonPrim" $
+                tryR simplifyE .
+                do ty <- exprTypeT
+                   guardMsg (simple ty) "Non-simple arguments"
+                   prefixFailMsg "Given primitive."
+                     (unfoldPredR (\ v _ -> not (isPrim v)))
+ where
+   simple :: Type -> Bool
+   simple (coreView -> Just ty) = simple ty
+   simple (FunTy dom ran)       = simple dom && simple ran
+   simple (ForAllTy _ ty)       = simple ty
+   simple ty                    = not (isDictLikeTy ty)
+
+isPrim :: Id -> Bool
+isPrim v =
+     isDictLikeTy (rangeType (varType v))
+  || S.member (fqVarName v) primNames
+  -- || ...
+
+-- isPrim = isPrefixOf "$" . uqVarName
+
+primNames :: S.Set String
+primNames = S.fromList
+             [ "GHC."++modu++"."++name | (modu,names) <- prims , name <- names ]
+ where
+   prims = [("Num",["fromInteger","+"])]
+   -- TODO: more classes & methods
+
+rangeType :: Type -> Type
+rangeType (coreView -> Just ty) = rangeType ty
+rangeType (FunTy _          ty) = rangeType ty
+rangeType (ForAllTy _       ty) = rangeType ty
+rangeType                   ty  = ty
+
+-- I don't know why this one is letting dictionary-constructing functions through
+
+-- isPrim v = isDictId v -- || ...
+-- isPrim v = isDictLikeTy (idType v) -- || ...
+
+-- isPrim = const False -- for now
+
+bashIt :: ReExpr
+bashIt = watchR "bashWith" $
+  bashWith [ castFloatAppR
+           ]
+
+bashAll :: ReExpr
+bashAll = watchR "bashAll" $
+  bashWith [ standardizeCase
+           , standardizeCon
+           , unfoldNonPrim
+           , castFloatAppR
+           ]
 
 {--------------------------------------------------------------------
     Plugin
@@ -162,5 +245,14 @@ plugin = hermitPlugin (pass 0 . interactive externals)
 
 externals :: [External]
 externals =
-    [ externC "abst-repr" abstReprR "..."
+    [ externC' "abst-repr" abstRepr
+    , externC' "abst'-repr" abst'Repr
+    , externC' "abst-repr'" abstRepr'
+    , externC' "standardize-case" standardizeCase
+    , externC' "standardize-con" standardizeCon
+    , externC' "unfold-method" unfoldMethod
+    , externC' "unfold-dollar" unfoldDollar
+    , externC' "unfold-nonprim" unfoldNonPrim
+    , externC' "bash-it" bashIt
+    , externC' "bash-all" bashAll
     ]
