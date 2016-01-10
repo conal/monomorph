@@ -5,8 +5,8 @@ set-pp-type     Omit
 -- set-pp-type     Show
 
 -- set-pp-coercion Kind
--- set-pp-coercion Show
-set-pp-coercion Omit
+set-pp-coercion Show
+-- set-pp-coercion Omit
 
 ---- Messing about
 
@@ -37,17 +37,19 @@ rhs-of 'sumT4
 -- rhs-of 'sumV1'
 -- -- unfold
 
+-- bash-all
+
 -- one-td standardize-case
 -- one-td unfold-nonprim
 
 -- one-td (standardize-case <+ unfold-nonprim)
 
--- repeat (one-td (standardize-case <+ unfold-nonprim))
+-- repeat (one-td (standardize-case <+ unfold-nonprim <+ cast-float-app)) -- >>> try bash-all
 
--- any-td (repeat (standardize-case <+ unfold-nonprim))
+-- any-td (repeat (standardize-case <+ unfold-nonprim <+ cast-float-apps <+ cast-float-lam)) >>> try bash-all
 
--- try bash
-
-bash-all
+any-td (repeat (standardize-case <+ unfold-nonprim))
+try (repeat (any-bu cast-float))
+try simplify
 
 try unshadow

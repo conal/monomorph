@@ -3,6 +3,14 @@ HERM = hermit Examples.hs -v0 -opt=Monomorph.Stuff
 go:
 	$(HERM) Go.hss
 
+timing3:
+	make timing
+	make timing
+	make timing
+
+timing:
+	time make go-resume
+
 go-done:
 	echo "" | make go ; echo
 

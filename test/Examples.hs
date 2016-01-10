@@ -57,51 +57,49 @@ negateI = negate
 addI :: Int -> Int
 addI x = x + 3
 
-sumV :: Num a => Vec n a -> a
-sumV ZVec      = 0
-sumV (a :< as) = a + sumV as
+sumP :: Pair Int -> Int
+sumP = sum
+
+-- sumV :: Num a => Vec n a -> a
+-- sumV ZVec      = 0
+-- sumV (a :< as) = a + sumV as
 
 sumV0 :: Vec N0 Int -> Int
-sumV0 = sumV
+sumV0 = sum
 
 sumV1 :: Vec N1 Int -> Int
-sumV1 = sumV
-
--- Running into trouble with Sum a / a coercion
-sumV1' :: Vec N1 Int -> Int
-sumV1' = sum
+sumV1 = sum
 
 sumV2 :: Vec N2 Int -> Int
-sumV2 = sumV
+sumV2 = sum
 
 sumV4 :: Vec N4 Int -> Int
-sumV4 = sumV
+sumV4 = sum
 
 sumV8 :: Vec N8 Int -> Int
-sumV8 = sumV
+sumV8 = sum
 
 sumT :: Num a => Tree n a -> a
 sumT (L a)      = a
 sumT (B (u :# v)) = sumT u + sumT v
 
 sumT0 :: Tree N0 Int -> Int
-sumT0 = sumT
+sumT0 = sum
 
 sumT1 :: Tree N1 Int -> Int
-sumT1 = sumT
-
--- Running into trouble with Sum a / a coercion
-sumT1' :: Tree N1 Int -> Int
-sumT1' = sum
+sumT1 = sum
 
 sumT2 :: Tree N2 Int -> Int
-sumT2 = sumT
+sumT2 = sum
 
 sumT3 :: Tree N3 Int -> Int
-sumT3 = sumT
+sumT3 = sum
 
 sumT4 :: Tree N4 Int -> Int
-sumT4 = sumT
+sumT4 = sum
+
+sumT4' :: Tree N4 Int -> Int
+sumT4' = sumT
 
 sumT8 :: Tree N8 Int -> Int
-sumT8 = sumT
+sumT8 = sum

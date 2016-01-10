@@ -56,9 +56,6 @@ import HERMIT.Extras
 onScrutineeR :: Unop ReExpr
 onScrutineeR r = caseAllR r id id (const id)
 
-bashWith :: [ReExpr] -> ReExpr
-bashWith rs = bashExtendedWithE (promoteR <$> rs)
-
 {--------------------------------------------------------------------
     Observing
 --------------------------------------------------------------------}
@@ -182,12 +179,16 @@ standardizeCon = watchR "standardizeCon" (tryR bashE . go)
 -- require simplification).
 
 unfoldNonPrim :: ReExpr
-unfoldNonPrim = watchR "unfoldNonPrim" $
-                tryR simplifyE .
-                do ty <- exprTypeT
-                   guardMsg (simple ty) "Non-simple arguments"
-                   prefixFailMsg "Given primitive."
-                     (unfoldPredR (\ v _ -> not (isPrim v)))
+unfoldNonPrim =
+  unfoldNonPrim <+ (castAllR unfoldNonPrim id . castFloatApps)
+
+unfoldNonPrim' :: ReExpr
+unfoldNonPrim' = watchR "unfoldNonPrim" $
+                 tryR simplifyE .
+                 do ty <- exprTypeT
+                    guardMsg (simple ty) "Non-simple arguments"
+                    prefixFailMsg "Given primitive."
+                      (unfoldPredR (\ v _ -> not (isPrim v)))
  where
    simple :: Type -> Bool
    simple (coreView -> Just ty) = simple ty
@@ -216,25 +217,29 @@ rangeType (FunTy _          ty) = rangeType ty
 rangeType (ForAllTy _       ty) = rangeType ty
 rangeType                   ty  = ty
 
--- I don't know why this one is letting dictionary-constructing functions through
+-- | Various single-step cast-floating rewrite
+castFloat :: ReExpr
+castFloat =
+     castFloatAppR <+ castFloatLamR <+ castFloatCaseR <+ castCastR
+  <+ castElimReflR <+ castElimSymR
 
--- isPrim v = isDictId v -- || ...
--- isPrim v = isDictLikeTy (idType v) -- || ...
+#if 0
 
--- isPrim = const False -- for now
+bashWith :: [ReExpr] -> ReExpr
+bashWith rs = bashExtendedWithE' (promoteR <$> rs)
 
 bashIt :: ReExpr
-bashIt = watchR "bashWith" $
-  bashWith [ castFloatAppR
-           ]
+bashIt = watchR "bashWith" bashE'
 
+-- Expensive!
 bashAll :: ReExpr
 bashAll = watchR "bashAll" $
   bashWith [ standardizeCase
            , standardizeCon
            , unfoldNonPrim
-           , castFloatAppR
            ]
+
+#endif
 
 {--------------------------------------------------------------------
     Plugin
@@ -252,7 +257,12 @@ externals =
     , externC' "standardize-con" standardizeCon
     , externC' "unfold-method" unfoldMethod
     , externC' "unfold-dollar" unfoldDollar
+    , externC' "unfold-nonprim'" unfoldNonPrim' -- to eliminate
     , externC' "unfold-nonprim" unfoldNonPrim
-    , externC' "bash-it" bashIt
-    , externC' "bash-all" bashAll
+    , externC' "cast-float-apps" castFloatApps
+    , externC' "cast-float-case" castFloatCaseR
+    , externC' "cast-float" castFloat
     ]
+
+--     , externC' "bash-it" bashIt
+--     , externC' "bash-all" bashAll
