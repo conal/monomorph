@@ -101,5 +101,14 @@ sumT4 = sum
 sumT4' :: Tree N4 Int -> Int
 sumT4' = sumT
 
+sumT5 :: Tree N5 Int -> Int
+sumT5 = sum
+
+sumT6 :: Tree N6 Int -> Int
+sumT6 = sum
+
+sumT7 :: Tree N7 Int -> Int
+sumT7 = sum
+
 sumT8 :: Tree N8 Int -> Int
 sumT8 = sum

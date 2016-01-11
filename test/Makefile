@@ -1,5 +1,32 @@
 HERM = hermit Examples.hs -v0 -opt=Monomorph.Stuff
 
+%.cont:
+	(cat settings.hss ; echo "rhs-of '$*" ; cat recipe.hss) > out/script.hss
+	$(HERM) out/script.hss
+
+%.done:
+	echo "" | make $*.cont ; echo
+
+%.time:
+	time make $*.done
+
+%.time3:
+	make %*.time
+	make %*.time
+	make %*.time
+
+compile-mono:
+	cd .. ; make
+
+compile-circat:
+	cd ~/Tabula/Haskell/circat ; make
+
+compile-extras:
+	cd ~/Tabula/Haskell/hermit-extras ; make
+
+compile-all: compile-circat compile-extras compile-mono
+
+
 go:
 	$(HERM) Go.hss
 
@@ -19,45 +46,3 @@ go-resume:
 
 bare:
 	$(HERM)
-
-compile-mono:
-	cd .. ; make
-
-compile-circat:
-	cd ~/Tabula/Haskell/circat ; make
-
-compile-extras:
-	cd ~/Tabula/Haskell/hermit-extras ; make
-
-compile-all: compile-circat compile-extras compile-mono
-
-# doit:
-# 	time $(HERM) Go.hss resume && ./Example
-
-# reify-done:
-# 	echo "" | make reify ; echo
-
-# no-reify-done:
-# 	echo "" | make no-reify ; echo
-
-# dont-done:
-# 	echo "" | make dont ; echo
-
-# foo-done:
-# 	echo "" | make foo ; echo
-
-# reify:
-# 	$(HERM) Go.hss
-
-# no-reify:
-# 	$(HERM) GoNoReify.hss
-
-# dont:
-# 	$(HERM) Dont.hss
-
-# foo:
-# 	$(HERM) Foo.hss
-
-# compile:
-# 	cd ../..; make
-

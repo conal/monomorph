@@ -8,47 +8,11 @@ set-pp-type     Omit
 set-pp-coercion Show
 -- set-pp-coercion Omit
 
----- Messing about
+--------
 
--- -- rhs-of 'abst1
--- occurrence-of 'abst
+rhs-of 'sumT2
 
--- binding-of 'trip1 ; nonrec-rhs
--- abst-repr
--- -- [app-fun,app-fun,app-fun,app-fun,app-fun]
-
--- unfold
--- standardize-case
-
--- rhs-of 'sumVI1
--- unfold
--- lam-body
--- standardize-case
--- bash
-
--- TODO: replace bash with simpler steps:
--- case-float-case, inline-worker, case-reduce
-
-rhs-of 'sumT1
-
--- standardize-con
--- bash
-
--- rhs-of 'sumV1'
--- -- unfold
-
--- bash-all
-
--- one-td standardize-case
--- one-td unfold-nonprim
-
--- one-td (standardize-case <+ unfold-nonprim)
-
--- repeat (one-td (standardize-case <+ unfold-nonprim <+ cast-float-app)) -- >>> try bash-all
-
--- any-td (repeat (standardize-case <+ unfold-nonprim <+ cast-float-apps <+ cast-float-lam)) >>> try bash-all
-
-any-td (repeat (standardize-case <+ unfold-nonprim))
+any-td (repeat (standardize-case <+ standardize-con <+ unfold-nonprim))
 try (repeat (any-bu cast-float))
 try simplify
 
