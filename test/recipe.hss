@@ -1,6 +1,7 @@
+any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
 
-any-td (repeat (standardize-case <+ standardize-con <+ unfold-nonprim))
-try (repeat (any-bu cast-float))
 try simplify
 
 try unshadow
+
+-- top

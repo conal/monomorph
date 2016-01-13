@@ -10,8 +10,8 @@
 -- For convenient development. Remember to recompile (the ghc-7.10.3 branches
 -- of) circat and hermit-extras.
 
-:set -i/Users/conal/Tabula/Haskell/circat/src
-:set -i/Users/conal/Tabula/Haskell/hermit-extras/src
+-- :set -i/Users/conal/Tabula/Haskell/circat/src
+-- :set -i/Users/conal/Tabula/Haskell/hermit-extras/src
 
 -- To help when switching between circat and lambda-ccc in Emacs.
 -- :set -package applicative-numbers

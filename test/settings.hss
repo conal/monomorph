@@ -4,7 +4,7 @@ set-pp-width 80
 set-pp-type     Omit
 -- set-pp-type     Show
 
--- set-pp-coercion Kind
-set-pp-coercion Show
+set-pp-coercion Kind
+-- set-pp-coercion Show
 -- set-pp-coercion Omit
 

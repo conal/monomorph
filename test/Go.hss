@@ -5,15 +5,29 @@ set-pp-type     Omit
 -- set-pp-type     Show
 
 -- set-pp-coercion Kind
-set-pp-coercion Show
--- set-pp-coercion Omit
+-- set-pp-coercion Show
+set-pp-coercion Omit
 
 --------
 
-rhs-of 'sumT2
+-- rhs-of 'boop
+-- beta-reduce
+-- occurrence-of 'ds
+-- unfold-poly
 
-any-td (repeat (standardize-case <+ standardize-con <+ unfold-nonprim))
-try (repeat (any-bu cast-float))
+rhs-of 'sumT8
+
+-- Since standardize-case cuts off recursion, it's important for it to precede
+-- unfold-poly and inline-global,
+
+any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
+
 try simplify
 
 try unshadow
+
+-- [cast-expr, lam-body]
+
+-- cast-float-let
+
+

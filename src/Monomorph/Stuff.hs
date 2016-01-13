@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, ViewPatterns #-}
+{-# LANGUAGE CPP, ViewPatterns, LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -34,16 +34,17 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 import Data.String (fromString)
 
-import HERMIT.Core (CoreDef(..),exprTypeM)
-import HERMIT.Dictionary hiding (externals)
+import HERMIT.Core (CoreDef(..),exprTypeM,bindsToProg,progToBinds)
+import HERMIT.Dictionary hiding (externals,simplifyR)
+import qualified HERMIT.Dictionary as HD
 import HERMIT.External (External,external)
 import HERMIT.GHC
 import HERMIT.Kure hiding ((<$>),(<*>))
 import HERMIT.Plugin (hermitPlugin,pass,interactive)
-import HERMIT.Name (HermitName)
+import HERMIT.Name (HermitName,newGlobalIdH)
 import HERMIT.Monad (getModGuts,getHscEnv)
 
-import HERMIT.Extras
+import HERMIT.Extras hiding (simplifyE)
 
 -- import Circat.Rep
 
@@ -56,6 +57,24 @@ import HERMIT.Extras
 onScrutineeR :: Unop ReExpr
 onScrutineeR r = caseAllR r id id (const id)
 
+castFloatLetRhsR :: ReExpr
+castFloatLetRhsR = watchR "castFloatLetRhsR" $
+  withPatFailMsg ("castFloatLetRhsR failed: " ++
+                 wrongExprForm "Let (NonRec v (Cast rhs co)) body") $
+  do Let (NonRec v (Cast _ _)) _ <- id
+     id
+      . letAllR id letSubstR  -- or leave for later elimination
+      . letFloatLetR
+      . letAllR (nonRecAllR id (letFloatCastR . castAllR (letIntroR (uqVarName v)) id)) id
+
+castFloatLetBodyR :: ReExpr
+castFloatLetBodyR = watchR "castFloatLetBodyR" $
+  withPatFailMsg ("castFloatLetBodyR failed: " ++
+                 wrongExprForm "Let bind (Cast body co)") $
+  do Let bind (Cast body co) <- id
+     return $
+       Cast (Let bind body) co
+
 {--------------------------------------------------------------------
     Observing
 --------------------------------------------------------------------}
@@ -63,7 +82,7 @@ onScrutineeR r = caseAllR r id id (const id)
 observing :: Observing
 observing = False
 
--- #define LintDie
+#define LintDie
 
 #ifdef LintDie
 watchR, nowatchR :: String -> Unop ReExpr
@@ -157,17 +176,20 @@ unfoldDollar = unfoldPredR (\ v _ -> isPrefixOf "$" (uqVarName v))
 -- Simplified version, leaving more work for another pass.
 standardizeCase :: ReExpr
 standardizeCase = watchR "standardizeCase" $
- tryR bashE .
+ tryR simplifyE .
  onScrutineeR (appAllR unfoldMethod id . abstRepr')
  -- onScrutineeR (unfoldMethod . abstRepr')  -- also fine
 
 -- Prepare to eliminate non-standard constructor applications (fully saturated).
 standardizeCon :: ReExpr
-standardizeCon = watchR "standardizeCon" (tryR bashE . go)
+standardizeCon = watchR "standardizeCon" $
+                 tryR simplifyE . go . rejectR isType
  where
    go = doit <+ (lamAllR id go . etaExpandR "eta")
    doit = appAllR id (appAllR unfoldMethod id)
         . (callDataConT >> abst'Repr)
+
+-- etaExpandR dies on Type t. Avoided via rejectR isType
 
 -- TODO: somehow prevent standardizeCase and standardizeCon from looping.
 -- Must I explicitly add other transformations?
@@ -199,7 +221,7 @@ unfoldNonPrim' = watchR "unfoldNonPrim" $
 isPrim :: Id -> Bool
 isPrim v =
      isDictLikeTy (rangeType (varType v))
-  || S.member (fqVarName v) primNames
+  || isPrimVar v
   -- || ...
 
 -- isPrim = isPrefixOf "$" . uqVarName
@@ -208,8 +230,11 @@ primNames :: S.Set String
 primNames = S.fromList
              [ "GHC."++modu++"."++name | (modu,names) <- prims , name <- names ]
  where
-   prims = [("Num",["fromInteger","+"])]
+   prims = [("Num",["+","-","*","negate","abs","signum","fromInteger"])]
    -- TODO: more classes & methods
+
+isPrimVar :: Var -> Bool
+isPrimVar v = fqVarName v `S.member` primNames
 
 rangeType :: Type -> Type
 rangeType (coreView -> Just ty) = rangeType ty
@@ -219,9 +244,115 @@ rangeType                   ty  = ty
 
 -- | Various single-step cast-floating rewrite
 castFloat :: ReExpr
-castFloat =
-     castFloatAppR <+ castFloatLamR <+ castFloatCaseR <+ castCastR
-  <+ castElimReflR <+ castElimSymR
+
+castFloat = -- watchR "castFloat" $
+     {- watchR "castFloatAppR"  -} castFloatAppR
+  <+ {- watchR "castFloatLamR"  -} castFloatLamR
+  <+ {- watchR "castFloatCaseR" -} castFloatCaseR
+  <+ {- watchR "castCastR"      -} castCastR
+  <+ {- watchR "castElimReflR"  -} castElimReflR
+  <+ {- watchR "optimizeCastR"  -} optimizeCastR
+  <+ {- watchR "castElimSymR "  -} castElimSymR
+  <+ castFloatLetRhsR
+  <+ castFloatLetBodyR
+
+--   <+ letFloatCastR
+
+-- castFloat = watchR "castFloat" $
+--      castFloatAppR <+ castFloatLamR <+ castFloatCaseR <+ castCastR
+--   <+ castElimReflR <+ castElimSymR  <+ letFloatCastR
+--   <+ castFloatLetRhsR <+ castFloatLetBodyR
+
+#if 0
+inlinePolyOrGlobal :: ReExpr
+inlinePolyOrGlobal =
+  watchR "inlinePolyOrGlobal" $
+  configurableInlineR AllBinders (arr okay)
+ where
+   okay v = fqVarName v `S.notMember` primNames
+         && not (isDictLikeTy ty)
+         && (isGlobalId v || isPolyTy ty)
+    where
+      ty = varType v
+
+#endif
+
+isPolyTy :: Type -> Bool
+isPolyTy (coreView -> Just ty) = isPolyTy ty
+isPolyTy (ForAllTy {})         = True
+isPolyTy _                     = False
+
+polyOrPredTy :: Type -> Bool
+polyOrPredTy (coreView -> Just ty) = polyOrPredTy ty
+polyOrPredTy (ForAllTy {})         = True
+polyOrPredTy (FunTy dom ran)       = polyOrPredTy dom || polyOrPredTy ran
+polyOrPredTy ty                    = isPredTy ty
+
+unfoldPoly :: ReExpr
+unfoldPoly = watchR "unfoldPoly" $
+  do ty <- exprTypeT -- rejects Type t
+     guardMsg (not (polyOrPredTy ty)) "Polymorphic or predicate"
+     tidy . unfoldPredR okay
+ where
+   -- TODO: Revisit okay. What about when null args and v is polymorphic?
+   okay v args =  not (isPrimVar v)
+               && (if null args then isPolyTy (varType v) else all okayArg args)
+   okayArg (Type _) = True
+   okayArg arg      = isDictLikeTy (exprType arg)
+   tidy = tryR simplifyE -- . tryR (bashUsingE [castFloat])
+
+-- TODO: Try innermostR instead of bash
+
+dictish :: Type -> Bool
+dictish (coreView -> Just ty) = dictish ty
+dictish (ForAllTy _ ty)       = dictish ty
+dictish (FunTy dom ran)       = dictish dom || dictish ran
+dictish ty                    = isDictLikeTy ty
+
+-- isDictish :: ReExpr
+-- isDictish = (acceptR dictish . exprTypeT) >> id
+
+-- isDictLike :: ReExpr
+-- isDictLike = (acceptR isDictLikeTy . exprTypeT) >> id
+
+inlineGlobal :: ReExpr
+inlineGlobal = watchR "inlineGlobal" $
+  configurableInlineR AllBinders (arr okay)
+ where
+   okay v = isGlobalId v
+         && not (isPrimVar v)
+         && not (dictish (varType v))
+
+okayToSubst :: CoreExpr -> Bool
+okayToSubst (Var _)  = True
+okayToSubst (Type _) = True
+okayToSubst ty       = polyOrPredTy (exprType ty)
+
+letNonRecSubstSaferR :: ReExpr
+letNonRecSubstSaferR = letNonRecSubstSafeR' (arr okayToSubst)
+
+simplifyE :: ReExpr
+simplifyE = watchR "simplifyE" $ extractR simplifyR
+
+-- simplifyE = extractR (simplifyR' (arr okayToSubst))
+
+-- | Replacement for HERMIT's 'simplifyR'. Uses a more conservative
+-- 'letNonRecSubstSafeR'', and adds 'castFloat'.
+simplifyR :: ReLCore
+simplifyR = 
+  setFailMsg "Simplify failed: nothing to simplify." $
+  innermostR (  promoteBindR recToNonrecR
+             <+ promoteExprR ( unfoldBasicCombinatorR
+                            <+ betaReducePlusR
+                            <+ letNonRecSubstSafeR' (arr okayToSubst) -- tweaked
+                            <+ caseReduceR False
+                            <+ caseReduceUnfoldR False -- added
+                            <+ letElimR
+                            -- added
+                            <+ castFloat
+                            <+ caseFloatCaseR
+                            )
+             )
 
 #if 0
 
@@ -262,7 +393,22 @@ externals =
     , externC' "cast-float-apps" castFloatApps
     , externC' "cast-float-case" castFloatCaseR
     , externC' "cast-float" castFloat
+    , externC' "unfold-poly" unfoldPoly
+    , externC' "inline-global" inlineGlobal
+    , externC' "simplify" simplifyE  -- override HERMIT's simplify
+    , externC' "simplify-was" HD.simplifyR
+    , externC' "cast-float-let-rhs" castFloatLetRhsR
+    , externC' "cast-float-let-body" castFloatLetBodyR
+    , externC' "optimize-cast" optimizeCastR
     ]
 
 --     , externC' "bash-it" bashIt
 --     , externC' "bash-all" bashAll
+
+--     , externC' "cse-guts" cseGuts
+--     , externC' "cse-prog" cseProg
+--     , externC' "cse-bind" cseBind
+--     , externC' "cse-expr" cseExpr
+
+--     , externC' "is-dictish" isDictish
+--     , externC' "is-dict-like" isDictLike

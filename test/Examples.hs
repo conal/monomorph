@@ -1,7 +1,7 @@
-{-# LANGUAGE TupleSections, GADTs #-}
+{-# LANGUAGE CPP, TupleSections, GADTs, TypeOperators #-}
 {-# OPTIONS_GHC -Wall #-}
 
--- {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
+{-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
 -- {-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
 
 ----------------------------------------------------------------------
@@ -26,12 +26,15 @@ module Examples where
 
 -- TODO: explicit exports
 
-import Circat.Rep
+import Data.Monoid (Sum(..))
 
 import TypeUnary.Vec
 
+import Circat.Rep
 import Circat.Pair
 import Circat.RTree
+
+#if 1
 
 trip1 :: (Int,Double,Bool)
 trip1 = (3,pi,False)
@@ -89,6 +92,12 @@ sumT0 = sum
 sumT1 :: Tree N1 Int -> Int
 sumT1 = sum
 
+#if 1
+
+-- Eta-expanded variant
+sumT1' :: Tree N1 Int -> Int
+sumT1' t = sum t
+
 sumT2 :: Tree N2 Int -> Int
 sumT2 = sum
 
@@ -112,3 +121,77 @@ sumT7 = sum
 
 sumT8 :: Tree N8 Int -> Int
 sumT8 = sum
+
+#endif
+
+#if 0
+
+sumT16 :: Tree N16 Int -> Int
+sumT16 = sum
+
+type N32 = N16 :+: N16
+type N64 = N32 :+: N32
+
+sumT32 :: Tree N32 Int -> Int
+sumT32 = sum
+
+sumT64 :: Tree N64 Int -> Int
+sumT64 = sum
+
+#endif
+
+#if 0
+
+type N128 =  N64 :+:  N64
+type N256 = N128 :+: N128
+
+sumT128 :: Tree N128 Int -> Int
+sumT128 = sum
+
+sumT256 :: Tree N256 Int -> Int
+sumT256 = sum
+
+#endif
+
+#endif
+
+#if 0
+
+fiddle, faddle :: Int
+fiddle = 2 + 3
+faddle = 2 + 3
+
+voop, boop :: Int
+voop = let x = 2+3 in x*x
+boop = let x = 2+3 in x*x
+
+#endif
+
+#if 0
+p1 :: Pair Int -> Pair Int
+p1 = fmap negate
+
+sqr :: Int -> Int
+sqr x = x * x
+
+q :: Int
+q = sqr (2 + 3)
+
+pickle :: (Int -> Int) -> Int
+pickle f = f 2 + f 3
+
+qbert :: Int
+qbert = pickle negate
+
+-- voot :: RTree Z Int -> Sum Int
+-- voot (L a) = Sum a
+
+-- boop :: Sum Int
+-- boop = voot (L 3)
+
+boop :: Sum Int
+boop = voot (L 3)
+ where
+   voot :: RTree Z Int -> Sum Int
+   voot (L a) = Sum a
+#endif
