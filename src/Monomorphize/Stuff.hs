@@ -7,17 +7,17 @@
 
 ----------------------------------------------------------------------
 -- |
--- Module      :  Monomorph.Stuff
+-- Module      :  Monomorphize.Stuff
 -- Copyright   :  (c) 2016 Conal Elliott
 -- License     :  BSD3
 --
 -- Maintainer  :  conal@conal.net
 -- Stability   :  experimental
 -- 
--- Experiments. Working up to a monomorphization GHC plugin.
+-- Working up to a monomorphization GHC plugin.
 ----------------------------------------------------------------------
 
-module Monomorph.Stuff where
+module Monomorphize.Stuff where
 
 -- TODO: explicit exports
 
