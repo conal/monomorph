@@ -1,4 +1,4 @@
-Name:                monomorphize-plugin
+Name:                monomorph
 Version:             0.0.0
 Cabal-Version:       >= 1.6
 Synopsis:            
@@ -15,7 +15,7 @@ build-type:          Simple
 
 source-repository head
   type:     git
-  location: git://github.com/conal/monomorphize-plugin.git
+  location: git://github.com/conal/monomorph.git
 
 Library
   hs-Source-Dirs:      src
@@ -26,6 +26,6 @@ Library
                      , hermit-extras >= 0.4.0
                      , circat
   Exposed-Modules:
-                       Monomorphize.Stuff     
+                       Monomorph.Stuff     
                        
   ghc-options:         -Wall

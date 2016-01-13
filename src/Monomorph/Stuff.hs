@@ -7,7 +7,7 @@
 
 ----------------------------------------------------------------------
 -- |
--- Module      :  Monomorphize.Stuff
+-- Module      :  Monomorph.Stuff
 -- Copyright   :  (c) 2016 Conal Elliott
 -- License     :  BSD3
 --
@@ -17,7 +17,7 @@
 -- Working up to a monomorphization GHC plugin.
 ----------------------------------------------------------------------
 
-module Monomorphize.Stuff where
+module Monomorph.Stuff where
 
 -- TODO: explicit exports
 
