@@ -333,6 +333,7 @@ simplifyOneStepE =
   <+ watchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
   <+ watchR "caseFloatCaseR" caseFloatCaseR
   <+ watchR "inlineWorkerR" inlineWorkerR
+  <+ watchR "caseDefaultR" caseDefaultR
 
 simplifyWithLetFloatingR :: ReLCore
 simplifyWithLetFloatingR =
@@ -352,23 +353,18 @@ letFloatExprNoCastR = setFailMsg "Unsuitable expression for Let floating." $
   <+ letFloatCaseR <+ letFloatCaseAltR Nothing
   -- <+ letFloatCastR
 
-#if 0
-
-bashWith :: [ReExpr] -> ReExpr
-bashWith rs = bashExtendedWithE' (promoteR <$> rs)
-
-bashIt :: ReExpr
-bashIt = watchR "bashWith" bashE'
-
--- Expensive!
-bashAll :: ReExpr
-bashAll = watchR "bashAll" $
-  bashWith [ standardizeCase
-           , standardizeCon
-           , unfoldNonPrim
-           ]
-
-#endif
+-- | @case scrut wild of p -> body ==> let wild = scrut in body@, when p has no free
+-- variables where the wildcard variable isn't used. If wild is a dead Id, don't
+-- bother substituting.
+caseDefaultR :: ReExpr
+caseDefaultR =
+  do Case scrut wild _ [(_,[],body)] <- id
+     case idOccInfo wild of
+       IAmDead -> return body
+       _       ->
+         do -- guardMsg (not (isUnLiftedType (exprType scrut)))
+            --   "caseDefaultR: unlifted type"
+            return (Let (NonRec wild scrut) body)
 
 lintCheckE :: ReExpr
 lintCheckE = watchR "lintCheckE" id
@@ -405,6 +401,7 @@ externals =
     , externC' "simplify-with-let-floating" simplifyWithLetFloatingR
     , externC' "inline-worker" inlineWorkerR
     , externC' "unfold-worker" unfoldWorkerR
+    , externC' "case-default" caseDefaultR
 
     , externC' "let-float-expr" letFloatExprR
     , externC' "let-nonrec-subst-safer" letNonRecSubstSaferR
