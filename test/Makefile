@@ -1,4 +1,4 @@
-HERM = hermit Examples.hs -v0 -opt=Monomorphize.Stuff
+HERM = hermit Examples.hs -v0 -opt=Monomorph.Stuff
 
 default: go
 

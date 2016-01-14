@@ -57,18 +57,24 @@ import HERMIT.Extras hiding (simplifyE)
 onScrutineeR :: Unop ReExpr
 onScrutineeR r = caseAllR r id id (const id)
 
+-- | let v = rhs |> co in body
+-- --> let v = (let v' = rhs in v') |> co in body
+-- --> let v = (let v' = rhs in v' |> co) in body
+-- --> let v' = rhs in (let v = v' |> co) in body
+-- --> let v' = rhs in body[(v' |> co)/v]
 castFloatLetRhsR :: ReExpr
-castFloatLetRhsR = watchR "castFloatLetRhsR" $
+castFloatLetRhsR =
   withPatFailMsg ("castFloatLetRhsR failed: " ++
                  wrongExprForm "Let (NonRec v (Cast rhs co)) body") $
   do Let (NonRec v (Cast _ _)) _ <- id
      id
+      -- . error "castFloatLetRhsR bail"
       . letAllR id letSubstR  -- or leave for later elimination
       . letFloatLetR
       . letAllR (nonRecAllR id (letFloatCastR . castAllR (letIntroR (uqVarName v)) id)) id
 
 castFloatLetBodyR :: ReExpr
-castFloatLetBodyR = watchR "castFloatLetBodyR" $
+castFloatLetBodyR =
   withPatFailMsg ("castFloatLetBodyR failed: " ++
                  wrongExprForm "Let bind (Cast body co)") $
   do Let bind (Cast body co) <- id
@@ -82,7 +88,7 @@ castFloatLetBodyR = watchR "castFloatLetBodyR" $
 observing :: Observing
 observing = False
 
-#define LintDie
+-- #define LintDie
 
 #ifdef LintDie
 watchR, nowatchR :: String -> Unop ReExpr
@@ -244,17 +250,16 @@ rangeType                   ty  = ty
 
 -- | Various single-step cast-floating rewrite
 castFloat :: ReExpr
-
-castFloat = -- watchR "castFloat" $
-     {- watchR "castFloatAppR"  -} castFloatAppR
-  <+ {- watchR "castFloatLamR"  -} castFloatLamR
-  <+ {- watchR "castFloatCaseR" -} castFloatCaseR
-  <+ {- watchR "castCastR"      -} castCastR
-  <+ {- watchR "castElimReflR"  -} castElimReflR
-  <+ {- watchR "optimizeCastR"  -} optimizeCastR
-  <+ {- watchR "castElimSymR "  -} castElimSymR
-  <+ castFloatLetRhsR
-  <+ castFloatLetBodyR
+castFloat = watchR "castFloat" $
+     {- watchR "castFloatAppR"     -} castFloatAppR
+  <+ {- watchR "castFloatLamR"     -} castFloatLamR
+  <+ {- watchR "castFloatCaseR"    -} castFloatCaseR
+  <+ {- watchR "castCastR"         -} castCastR
+  <+ {- watchR "castElimReflR"     -} castElimReflR
+  <+ {- watchR "castElimSymR "     -} castElimSymR
+  <+ {- watchR "optimizeCastR"     -} optimizeCastR
+  <+ {- watchR "castFloatLetRhsR"  -} castFloatLetRhsR
+  <+ {- watchR "castFloatLetBodyR" -} castFloatLetBodyR
 
 --   <+ letFloatCastR
 
@@ -329,7 +334,8 @@ okayToSubst (Type _) = True
 okayToSubst ty       = polyOrPredTy (exprType ty)
 
 letNonRecSubstSaferR :: ReExpr
-letNonRecSubstSaferR = letNonRecSubstSafeR' (arr okayToSubst)
+letNonRecSubstSaferR = -- letNonRecSubstSafeR  -- while experimenting
+                       letNonRecSubstSafeR' (arr okayToSubst)
 
 simplifyE :: ReExpr
 simplifyE = watchR "simplifyE" $ extractR simplifyR
@@ -337,22 +343,43 @@ simplifyE = watchR "simplifyE" $ extractR simplifyR
 -- simplifyE = extractR (simplifyR' (arr okayToSubst))
 
 -- | Replacement for HERMIT's 'simplifyR'. Uses a more conservative
--- 'letNonRecSubstSafeR'', and adds 'castFloat'.
+-- 'letNonRecSubstSafeR', and adds 'castFloat'.
 simplifyR :: ReLCore
 simplifyR = 
   setFailMsg "Simplify failed: nothing to simplify." $
   innermostR (  promoteBindR recToNonrecR
-             <+ promoteExprR ( unfoldBasicCombinatorR
-                            <+ betaReducePlusR
-                            <+ letNonRecSubstSafeR' (arr okayToSubst) -- tweaked
-                            <+ caseReduceR False
-                            <+ caseReduceUnfoldR False -- added
-                            <+ letElimR
+             <+ promoteExprR ( watchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
+                         -- <+ watchR "betaReduceSafePlusR" betaReduceSafePlusR
+                            <+ watchR "betaReduceR" betaReduceR
+                            <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
+                            <+ watchR "caseReduceR" (caseReduceR False)
+                            <+ watchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
+                            <+ watchR "letElimR" letElimR
                             -- added
                             <+ castFloat
-                            <+ caseFloatCaseR
+                            <+ watchR "caseFloatCaseR" caseFloatCaseR
+                            <+ watchR "inlineWorkerR" inlineWorkerR
                             )
              )
+
+-- | Replacement for HERMIT's 'simplifyR'. Uses a more conservative
+-- 'letNonRecSubstSafeR', and adds 'castFloat'.
+simplifyOneStepE :: ReExpr
+simplifyOneStepE = extractR $
+  -- watchR "simplifyOneStepE" $
+  setFailMsg "SimplifyE' failed: nothing to simplify." $
+  anybuE (  watchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
+         <+ watchR "betaReducePlusR" betaReducePlusR
+         <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
+         <+ watchR "caseReduceR" (caseReduceR False)
+         <+ watchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
+         <+ watchR "letElimR" letElimR
+         -- added
+         <+ castFloat
+         <+ watchR "caseFloatCaseR" caseFloatCaseR
+         <+ watchR "inlineWorkerR" inlineWorkerR
+         )
+
 
 #if 0
 
@@ -371,6 +398,9 @@ bashAll = watchR "bashAll" $
            ]
 
 #endif
+
+lintCheckE :: ReExpr
+lintCheckE = watchR "lintCheckE" id
 
 {--------------------------------------------------------------------
     Plugin
@@ -399,7 +429,15 @@ externals =
     , externC' "simplify-was" HD.simplifyR
     , externC' "cast-float-let-rhs" castFloatLetRhsR
     , externC' "cast-float-let-body" castFloatLetBodyR
+    , externC' "cast-cast" castCastR
     , externC' "optimize-cast" optimizeCastR
+
+    , externC' "inline-worker" inlineWorkerR
+    , externC' "unfold-worker" unfoldWorkerR
+
+    , externC' "let-nonrec-subst-safer" letNonRecSubstSaferR
+    , externC' "simplify-one-step" simplifyOneStepE
+    , externC' "lint-check" lintCheckE
     ]
 
 --     , externC' "bash-it" bashIt
@@ -412,3 +450,4 @@ externals =
 
 --     , externC' "is-dictish" isDictish
 --     , externC' "is-dict-like" isDictLike
+--     , externC' "standardize-con'" standardizeCon'

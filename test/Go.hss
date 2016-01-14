@@ -1,12 +1,12 @@
 set-pp-renderer ascii
 set-pp-width 80
 
-set-pp-type     Omit
--- set-pp-type     Show
+-- set-pp-type     Omit
+set-pp-type     Show
 
 -- set-pp-coercion Kind
--- set-pp-coercion Show
-set-pp-coercion Omit
+set-pp-coercion Show
+-- set-pp-coercion Omit
 
 --------
 
@@ -15,16 +15,56 @@ set-pp-coercion Omit
 -- occurrence-of 'ds
 -- unfold-poly
 
-rhs-of 'sumT8
+rhs-of 'foo
+
+-- simplify ; eta-reduce
+
+unfold-worker
+eta-reduce
+
+-- unfold >>> bash
+
+standardize-con
+
+-- lint-expr   -- Boom!
+
+-- standardize-con'
+
+-- repeat simplify-one-step
+
+
+-- standardize-con'
+-- -- repeat simplify-one-step
+-- simplify-one-step
+-- simplify-one-step
+
+-- any-bu let-nonrec-subst-safer  -- Boom
+
+-- [lam-body,app-arg,let-body,let-body,let-body]
+
+-- let-nonrec-subst-safer -- Boom
+
+-- one-td case-reduce
+-- simplify-one-step
+-- [lam-body,app-arg,let-body,let-body,let-body]
 
 -- Since standardize-case cuts off recursion, it's important for it to precede
 -- unfold-poly and inline-global,
 
-any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
+-- one-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
 
-try simplify
+-- one-td standardize-con'
 
-try unshadow
+-- [lam-body,lam-body,case-alt 0,alt-rhs,app-arg]
+
+-- beta-reduce
+-- simplify
+
+-- any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
+
+-- try simplify
+
+-- try unshadow
 
 -- [cast-expr, lam-body]
 

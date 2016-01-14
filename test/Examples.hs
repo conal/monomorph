@@ -3,6 +3,7 @@
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
 -- {-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 
 ----------------------------------------------------------------------
 -- |
@@ -122,12 +123,12 @@ sumT7 = sum
 sumT8 :: Tree N8 Int -> Int
 sumT8 = sum
 
+sumT16 :: Tree N16 Int -> Int
+sumT16 = sum
+
 #endif
 
 #if 0
-
-sumT16 :: Tree N16 Int -> Int
-sumT16 = sum
 
 type N32 = N16 :+: N16
 type N64 = N32 :+: N32
@@ -195,3 +196,15 @@ boop = voot (L 3)
    voot :: RTree Z Int -> Sum Int
    voot (L a) = Sum a
 #endif
+
+type Mty n = (Int -> Int) -> (RTree n Int -> RTree n Int)
+
+fmapT0  = fmap :: Mty N0
+fmapT1  = fmap :: Mty N1
+fmapT2  = fmap :: Mty N2
+fmapT4  = fmap :: Mty N4
+fmapT8  = fmap :: Mty N8
+fmapT16 = fmap :: Mty N16
+
+-- foo :: Pair (RTree Z Int) -> RTree N1 Int
+-- foo = B
