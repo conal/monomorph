@@ -361,10 +361,9 @@ caseDefaultR =
   do Case scrut wild _ [(_,[],body)] <- id
      case idOccInfo wild of
        IAmDead -> return body
-       _       ->
-         do -- guardMsg (not (isUnLiftedType (exprType scrut)))
-            --   "caseDefaultR: unlifted type"
-            return (Let (NonRec wild scrut) body)
+       _       -> return (Let (NonRec wild scrut) body)
+
+-- Examples go a little faster (< 3%) with the IAmDead test.
 
 lintCheckE :: ReExpr
 lintCheckE = watchR "lintCheckE" id
