@@ -36,175 +36,66 @@ import Circat.Pair
 import Circat.RTree
 
 #if 1
-
-trip1 :: (Int,Double,Bool)
-trip1 = (3,pi,False)
-
-trip1' :: Bool -> (Int,Double,Bool)
-trip1' = (,,) 3 pi
-
-trip2 :: (Int,Double,Bool)
-trip2 = abst (repr' trip1)
-
-ar1 :: (Int,Double,Bool) -> (Int,Double,Bool)
-ar1 = abst . repr'
-
-abst1 :: ((Int,Double),Bool) -> (Int,Double,Bool)
-abst1 = abst
-
-repr1 :: (Int,Double,Bool) -> ((Int,Double),Bool)
-repr1 = repr
-
-negateI :: Int -> Int
-negateI = negate
-
-addI :: Int -> Int
-addI x = x + 3
-
 sumP :: Pair Int -> Int
 sumP = sum
 
--- sumV :: Num a => Vec n a -> a
--- sumV ZVec      = 0
--- sumV (a :< as) = a + sumV as
-
-sumV0 :: Vec N0 Int -> Int
-sumV0 = sum
-
-sumV1 :: Vec N1 Int -> Int
-sumV1 = sum
-
-sumV2 :: Vec N2 Int -> Int
-sumV2 = sum
-
-sumV4 :: Vec N4 Int -> Int
-sumV4 = sum
-
-sumV8 :: Vec N8 Int -> Int
-sumV8 = sum
-
-sumT :: Num a => Tree n a -> a
-sumT (L a)      = a
-sumT (B (u :# v)) = sumT u + sumT v
-
-sumT0 :: Tree N0 Int -> Int
-sumT0 = sum
-
-sumT1 :: Tree N1 Int -> Int
-sumT1 = sum
+sumV0 = sum :: Vec N0 Int -> Int
+sumV1 = sum :: Vec N1 Int -> Int
+sumV2 = sum :: Vec N2 Int -> Int
+sumV3 = sum :: Vec N3 Int -> Int
+sumV4 = sum :: Vec N4 Int -> Int
+sumV8 = sum :: Vec N8 Int -> Int
+#endif
 
 #if 1
-
--- Eta-expanded variant
-sumT1' :: Tree N1 Int -> Int
-sumT1' t = sum t
-
-sumT2 :: Tree N2 Int -> Int
-sumT2 = sum
-
-sumT3 :: Tree N3 Int -> Int
-sumT3 = sum
-
-sumT4 :: Tree N4 Int -> Int
-sumT4 = sum
-
-sumT4' :: Tree N4 Int -> Int
-sumT4' = sumT
-
-sumT5 :: Tree N5 Int -> Int
-sumT5 = sum
-
-sumT6 :: Tree N6 Int -> Int
-sumT6 = sum
-
-sumT7 :: Tree N7 Int -> Int
-sumT7 = sum
-
-sumT8 :: Tree N8 Int -> Int
-sumT8 = sum
-
-sumT16 :: Tree N16 Int -> Int
-sumT16 = sum
-
+sumT0  = sum :: Tree N0 Int -> Int
+sumT1  = sum :: Tree N1 Int -> Int
+sumT2  = sum :: Tree N2 Int -> Int
+sumT3  = sum :: Tree N3 Int -> Int
+sumT4  = sum :: Tree N4 Int -> Int
+sumT5  = sum :: Tree N5 Int -> Int
+sumT6  = sum :: Tree N6 Int -> Int
+sumT7  = sum :: Tree N7 Int -> Int
+sumT8  = sum :: Tree N8 Int -> Int
+sumT16 = sum :: Tree N16 Int -> Int
 #endif
 
 #if 0
-
 type N32 = N16 :+: N16
 type N64 = N32 :+: N32
 
-sumT32 :: Tree N32 Int -> Int
-sumT32 = sum
-
-sumT64 :: Tree N64 Int -> Int
-sumT64 = sum
-
+sumT32 = sum :: Tree N32 Int -> Int
+sumT64 = sum :: Tree N64 Int -> Int
 #endif
 
 #if 0
-
 type N128 =  N64 :+:  N64
 type N256 = N128 :+: N128
 
-sumT128 :: Tree N128 Int -> Int
-sumT128 = sum
-
-sumT256 :: Tree N256 Int -> Int
-sumT256 = sum
-
+sumT128 = sum :: Tree N128 Int -> Int
+sumT256 = sum :: Tree N256 Int -> 'Int'
 #endif
 
-#endif
+#if 1
+type MV n = (Int -> Int) -> (Vec n Int -> Vec n Int)
 
-#if 0
-
-fiddle, faddle :: Int
-fiddle = 2 + 3
-faddle = 2 + 3
-
-voop, boop :: Int
-voop = let x = 2+3 in x*x
-boop = let x = 2+3 in x*x
-
+fmapV0  = fmap :: MV N0
+fmapV1  = fmap :: MV N1
+fmapV2  = fmap :: MV N2
+fmapV3  = fmap :: MV N3
+fmapV4  = fmap :: MV N4
+fmapV8  = fmap :: MV N8
+fmapV16 = fmap :: MV N16
 #endif
 
 #if 0
-p1 :: Pair Int -> Pair Int
-p1 = fmap negate
+type MT n = (Int -> Int) -> (RTree n Int -> RTree n Int)
 
-sqr :: Int -> Int
-sqr x = x * x
-
-q :: Int
-q = sqr (2 + 3)
-
-pickle :: (Int -> Int) -> Int
-pickle f = f 2 + f 3
-
-qbert :: Int
-qbert = pickle negate
-
--- voot :: RTree Z Int -> Sum Int
--- voot (L a) = Sum a
-
--- boop :: Sum Int
--- boop = voot (L 3)
-
-boop :: Sum Int
-boop = voot (L 3)
- where
-   voot :: RTree Z Int -> Sum Int
-   voot (L a) = Sum a
+fmapT0  = fmap :: MT N0
+fmapT1  = fmap :: MT N1
+fmapT2  = fmap :: MT N2
+fmapT3  = fmap :: MT N3
+fmapT4  = fmap :: MT N4
+fmapT8  = fmap :: MT N8
+fmapT16 = fmap :: MT N16
 #endif
-
-type Mty n = (Int -> Int) -> (RTree n Int -> RTree n Int)
-
-fmapT0  = fmap :: Mty N0
-fmapT1  = fmap :: Mty N1
-fmapT2  = fmap :: Mty N2
-fmapT4  = fmap :: Mty N4
-fmapT8  = fmap :: Mty N8
-fmapT16 = fmap :: Mty N16
-
--- foo :: Pair (RTree Z Int) -> RTree N1 Int
--- foo = B

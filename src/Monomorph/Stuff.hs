@@ -17,7 +17,7 @@
 -- Working up to a monomorphization GHC plugin.
 ----------------------------------------------------------------------
 
-module Monomorph.Stuff where
+module Monomorph.Stuff (plugin) where
 
 -- TODO: explicit exports
 
@@ -97,17 +97,15 @@ watchR lab r = lintingExprR lab (labeled observing (lab,r)) -- hard error
 #else
 -- watchR :: String -> Unop ReExpr
 -- watchR lab r = labeled observing (lab,r) >>> lintExprR  -- Fail softly on core lint error.
-watchR, nowatchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
+watchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
 watchR lab r = labeled observing (lab,r)  -- don't lint
 
 #endif
 
-nowatchR = watchR
+-- nowatchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
+-- nowatchR = watchR
 
 -- nowatchR _ = id
-
-skipT :: Monad m => Transform c m a b
-skipT = fail "untried"
 
 {--------------------------------------------------------------------
     Monomorphization
@@ -135,14 +133,8 @@ hasRepMethodF =
      return $ \ meth -> prefixFailMsg "apps' failed: " $
                         apps' (repName meth) [ty] [dict,Type ty',eq]
 
--- * I don't know why I need this test. Equality (a ~ b) types were somehow
--- squeaking through. Perhaps a bug in buildDictionaryT.
-
 hasRepMethodT :: TransformH Type (String -> ReExpr)
 hasRepMethodT = (\ f -> \ s -> App <$> f s <*> id) <$> hasRepMethodF
-
-hasRepMethod :: String -> TransformH Type CoreExpr
-hasRepMethod meth = hasRepMethodF >>= ($ meth)
 
 -- TODO: Rethink these three names
 
@@ -173,9 +165,9 @@ abstRepr' = -- watchR "abstRepr'" $
 unfoldMethod :: ReExpr
 unfoldMethod = -- watchR "unfoldMethod" $
     tryR unfoldDollar
-  . (tryR simplifyE . unfoldR)
+  . tryR simplifyE
+  . unfoldR
 
--- Move to hermit-extras
 unfoldDollar :: ReExpr
 unfoldDollar = unfoldPredR (\ v _ -> isPrefixOf "$" (uqVarName v))
 
@@ -184,7 +176,8 @@ standardizeCase :: ReExpr
 standardizeCase = watchR "standardizeCase" $
  tryR simplifyE .
  onScrutineeR (appAllR unfoldMethod id . abstRepr')
- -- onScrutineeR (unfoldMethod . abstRepr')  -- also fine
+
+-- unfoldMethod under appAllR so that we unfoldR won't replicate work.
 
 -- Prepare to eliminate non-standard constructor applications (fully saturated).
 standardizeCon :: ReExpr
@@ -261,27 +254,6 @@ castFloat = watchR "castFloat" $
   <+ {- watchR "castFloatLetRhsR"  -} castFloatLetRhsR
   <+ {- watchR "castFloatLetBodyR" -} castFloatLetBodyR
 
---   <+ letFloatCastR
-
--- castFloat = watchR "castFloat" $
---      castFloatAppR <+ castFloatLamR <+ castFloatCaseR <+ castCastR
---   <+ castElimReflR <+ castElimSymR  <+ letFloatCastR
---   <+ castFloatLetRhsR <+ castFloatLetBodyR
-
-#if 0
-inlinePolyOrGlobal :: ReExpr
-inlinePolyOrGlobal =
-  watchR "inlinePolyOrGlobal" $
-  configurableInlineR AllBinders (arr okay)
- where
-   okay v = fqVarName v `S.notMember` primNames
-         && not (isDictLikeTy ty)
-         && (isGlobalId v || isPolyTy ty)
-    where
-      ty = varType v
-
-#endif
-
 isPolyTy :: Type -> Bool
 isPolyTy (coreView -> Just ty) = isPolyTy ty
 isPolyTy (ForAllTy {})         = True
@@ -347,39 +319,38 @@ simplifyE = watchR "simplifyE" $ extractR simplifyR
 simplifyR :: ReLCore
 simplifyR = 
   setFailMsg "Simplify failed: nothing to simplify." $
-  innermostR (  promoteBindR recToNonrecR
-             <+ promoteExprR ( watchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
-                         -- <+ watchR "betaReduceSafePlusR" betaReduceSafePlusR
-                            <+ watchR "betaReduceR" betaReduceR
-                            <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
-                            <+ watchR "caseReduceR" (caseReduceR False)
-                            <+ watchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
-                            <+ watchR "letElimR" letElimR
-                            -- added
-                            <+ castFloat
-                            <+ watchR "caseFloatCaseR" caseFloatCaseR
-                            <+ watchR "inlineWorkerR" inlineWorkerR
-                            )
-             )
+  innermostR (promoteBindR recToNonrecR <+ promoteExprR simplifyOneStepE)
 
--- | Replacement for HERMIT's 'simplifyR'. Uses a more conservative
--- 'letNonRecSubstSafeR', and adds 'castFloat'.
 simplifyOneStepE :: ReExpr
-simplifyOneStepE = extractR $
-  -- watchR "simplifyOneStepE" $
-  setFailMsg "SimplifyE' failed: nothing to simplify." $
-  anybuE (  watchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
-         <+ watchR "betaReducePlusR" betaReducePlusR
-         <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
-         <+ watchR "caseReduceR" (caseReduceR False)
-         <+ watchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
-         <+ watchR "letElimR" letElimR
-         -- added
-         <+ castFloat
-         <+ watchR "caseFloatCaseR" caseFloatCaseR
-         <+ watchR "inlineWorkerR" inlineWorkerR
-         )
+simplifyOneStepE =
+     watchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
+  <+ watchR "betaReduceR" betaReduceR
+  <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
+  <+ watchR "caseReduceR" (caseReduceR False)
+  <+ watchR "letElimR" letElimR
+  -- added
+  <+ castFloat
+  <+ watchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
+  <+ watchR "caseFloatCaseR" caseFloatCaseR
+  <+ watchR "inlineWorkerR" inlineWorkerR
 
+simplifyWithLetFloatingR :: ReLCore
+simplifyWithLetFloatingR =
+  setFailMsg "Nothing to simplify." $
+  innermostR (promoteBindR recToNonrecR <+ promoteExprR rew)
+ where
+   rew =    simplifyOneStepE
+         <+ watchR "letFloatExprNoCastR" letFloatExprNoCastR
+
+-- letFloatExprNoCastR makes programs easier to read and enables some more
+-- simplifications, but slows things down noticeably. Remove if we want.
+
+-- | Like 'letFloatExprNoCastR but without 'letFloatCastR'
+letFloatExprNoCastR :: ReExpr
+letFloatExprNoCastR = setFailMsg "Unsuitable expression for Let floating." $
+     letFloatArgR <+ letFloatAppR <+ letFloatLetR <+ letFloatLamR
+  <+ letFloatCaseR <+ letFloatCaseAltR Nothing
+  -- <+ letFloatCastR
 
 #if 0
 
@@ -431,10 +402,11 @@ externals =
     , externC' "cast-float-let-body" castFloatLetBodyR
     , externC' "cast-cast" castCastR
     , externC' "optimize-cast" optimizeCastR
-
+    , externC' "simplify-with-let-floating" simplifyWithLetFloatingR
     , externC' "inline-worker" inlineWorkerR
     , externC' "unfold-worker" unfoldWorkerR
 
+    , externC' "let-float-expr" letFloatExprR
     , externC' "let-nonrec-subst-safer" letNonRecSubstSaferR
     , externC' "simplify-one-step" simplifyOneStepE
     , externC' "lint-check" lintCheckE
