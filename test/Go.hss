@@ -10,64 +10,14 @@ set-pp-coercion Show
 
 --------
 
--- rhs-of 'boop
--- beta-reduce
--- occurrence-of 'ds
--- unfold-poly
+rhs-of 'liftA2T0
 
-rhs-of 'foo
+any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
+try simplify-with-let-floating
+try unshadow
 
--- simplify ; eta-reduce
+-- application-of 'repr'
+-- [app-fun,app-arg,app-fun,app-fun,app-fun,app-fun] -- to case
+-- case-expr                                         --
 
-unfold-worker
-eta-reduce
-
--- unfold >>> bash
-
-standardize-con
-
--- lint-expr   -- Boom!
-
--- standardize-con'
-
--- repeat simplify-one-step
-
-
--- standardize-con'
--- -- repeat simplify-one-step
--- simplify-one-step
--- simplify-one-step
-
--- any-bu let-nonrec-subst-safer  -- Boom
-
--- [lam-body,app-arg,let-body,let-body,let-body]
-
--- let-nonrec-subst-safer -- Boom
-
--- one-td case-reduce
--- simplify-one-step
--- [lam-body,app-arg,let-body,let-body,let-body]
-
--- Since standardize-case cuts off recursion, it's important for it to precede
--- unfold-poly and inline-global,
-
--- one-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
-
--- one-td standardize-con'
-
--- [lam-body,lam-body,case-alt 0,alt-rhs,app-arg]
-
--- beta-reduce
--- simplify
-
--- any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
-
--- try simplify
-
--- try unshadow
-
--- [cast-expr, lam-body]
-
--- cast-float-let
-
-
+occurrence-of '$p1Applicative

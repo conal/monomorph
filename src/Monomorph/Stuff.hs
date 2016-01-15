@@ -81,6 +81,16 @@ castFloatLetBodyR =
      return $
        Cast (Let bind body) co
 
+-- | Like 'unfoldR' but without the substitution
+unfoldNoSubstR :: ReExpr
+unfoldNoSubstR = prefixFailMsg "unfold failed: " go
+ where 
+   go = appAllR go idR <+ inlineR
+
+unfoldPredNoSubstR :: (Id -> [CoreExpr] -> Bool) -> ReExpr
+unfoldPredNoSubstR p = callPredT p >> unfoldNoSubstR
+
+
 {--------------------------------------------------------------------
     Observing
 --------------------------------------------------------------------}
@@ -93,13 +103,17 @@ observing = False
 #ifdef LintDie
 watchR, nowatchR :: String -> Unop ReExpr
 watchR lab r = lintingExprR lab (labeled observing (lab,r)) -- hard error
-
 #else
 -- watchR :: String -> Unop ReExpr
 -- watchR lab r = labeled observing (lab,r) >>> lintExprR  -- Fail softly on core lint error.
-watchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
-watchR lab r = labeled observing (lab,r)  -- don't lint
 
+watchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
+watchR lab r = labeled' observing (lab,r)  -- don't lint
+
+-- Experiment. To replace watchR when labeled' replaces labeled. Rename both.
+watchR' :: (InCoreTC a, Injection b LCoreTC)
+       => String -> TransformH a b -> TransformH a b
+watchR' lab r = labeled' observing (lab,r)  -- don't lint
 #endif
 
 -- nowatchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
@@ -126,12 +140,25 @@ hasRepMethodF =
      guardMsg (closedType ty) "Type has free variables"
      hasRepTc <- findTyConT (repName "HasRep")
      dict  <- prefixFailMsg "Couldn't build dictionary." $
-              buildDictionaryT $* TyConApp hasRepTc [ty]
+              ( -- tryR (watchR "simplify-dict" simplifyE)
+                -- tryR (watchR "bash-dict" bashE)
+                id
+              . watchR' "buildDictionaryT" buildDictionaryT)
+                $* TyConApp hasRepTc [ty]
      repTc <- findTyConT (repName "Rep")
      (mkEqBox -> eq,ty') <- prefixFailMsg "normaliseTypeT failed: "$
                             normaliseTypeT Nominal $* TyConApp repTc [ty]
      return $ \ meth -> prefixFailMsg "apps' failed: " $
+                        tryR (watchR "bash-method-selection" bashE) .
                         apps' (repName meth) [ty] [dict,Type ty',eq]
+
+-- Would it be faster to also simplify/bash the dictionary so that we share that
+-- much for multi-use? See notes for 2015-01-14.
+
+-- Given that I'm pulling two methods out of a dictionary, maybe I can avoid
+-- building the dictionary twice. Perhaps a function that returns (abst,repr')
+-- and another that returns (abst',repr), with only one dictionary required to
+-- construct both pairs.
 
 hasRepMethodT :: TransformH Type (String -> ReExpr)
 hasRepMethodT = (\ f -> \ s -> App <$> f s <*> id) <$> hasRepMethodF
@@ -152,24 +179,27 @@ abstRepr = -- watchR "abstRepr" $
 abst'Repr :: ReExpr
 abst'Repr = -- watchR "abst'Repr" $
             do meth <- hasRepMethodT . exprTypeT
-               meth "abst'" . meth "repr"
+               meth "abst'" . watchR "simplify-repr" (meth "repr")
 
 -- | e ==> abst (repr' e).
 abstRepr' :: ReExpr
 abstRepr' = -- watchR "abstRepr'" $
             do meth <- hasRepMethodT . exprTypeT
-               meth "abst" . meth "repr'"
+               watchR "simplify-abst" (meth "abst") . meth "repr'"
 
 -- Do one unfolding, and then a second one only if the inlining result is a
 -- worker, as in the case of a method lifted to the top level.
 unfoldMethod :: ReExpr
 unfoldMethod = -- watchR "unfoldMethod" $
-    tryR unfoldDollar
+    tryR unfoldDollar  -- revisit
   . tryR simplifyE
   . unfoldR
 
+-- TODO: Do I still need unfoldMethod, or can I use unfoldPoly instead?
+
 unfoldDollar :: ReExpr
-unfoldDollar = unfoldPredR (\ v _ -> isPrefixOf "$" (uqVarName v))
+unfoldDollar = watchR "unfoldDollar" $
+               unfoldPredR (\ v _ -> isPrefixOf "$" (uqVarName v))
 
 -- Simplified version, leaving more work for another pass.
 standardizeCase :: ReExpr
@@ -186,6 +216,15 @@ standardizeCon = watchR "standardizeCon" $
  where
    go = doit <+ (lamAllR id go . etaExpandR "eta")
    doit = appAllR id (appAllR unfoldMethod id)
+        . (callDataConT >> abst'Repr)
+
+-- Prepare to eliminate non-standard constructor applications (fully saturated).
+standardizeCon' :: ReExpr
+standardizeCon' = watchR "standardizeCon'" $
+                  {- tryR simplifyE . -} go . rejectR isType
+ where
+   go = doit <+ (lamAllR id go . etaExpandR "eta")
+   doit = id -- appAllR id (appAllR unfoldMethod id)
         . (callDataConT >> abst'Repr)
 
 -- etaExpandR dies on Type t. Avoided via rejectR isType
@@ -268,51 +307,30 @@ polyOrPredTy ty                    = isPredTy ty
 unfoldPoly :: ReExpr
 unfoldPoly = watchR "unfoldPoly" $
   do ty <- exprTypeT -- rejects Type t
-     guardMsg (not (polyOrPredTy ty)) "Polymorphic or predicate"
-     tidy . unfoldPredR okay
+     guardMsg (not (polyOrPredTy ty)) "Must not involve polymorphism or predicates"
+     tryR simplifyE . unfoldPredNoSubstR (okay ty)
  where
-   -- TODO: Revisit okay. What about when null args and v is polymorphic?
-   okay v args =  not (isPrimVar v)
-               && (if null args then isPolyTy (varType v) else all okayArg args)
-   okayArg (Type _) = True
-   okayArg arg      = isDictLikeTy (exprType arg)
-   tidy = tryR simplifyE -- . tryR (bashUsingE [castFloat])
+   okay ty v args =  not (isPrimVar v && primTy)
+                  && (isGlobalId v || if null args then isPolyTy (varType v) else all okayArg args)
+    where
+      okayArg (Type _) = True
+      okayArg arg      = isDictLikeTy (exprType arg)
+      primTy = const True ty                     -- TODO: Fix
 
--- TODO: Try innermostR instead of bash
-
-dictish :: Type -> Bool
-dictish (coreView -> Just ty) = dictish ty
-dictish (ForAllTy _ ty)       = dictish ty
-dictish (FunTy dom ran)       = dictish dom || dictish ran
-dictish ty                    = isDictLikeTy ty
-
--- isDictish :: ReExpr
--- isDictish = (acceptR dictish . exprTypeT) >> id
-
--- isDictLike :: ReExpr
--- isDictLike = (acceptR isDictLikeTy . exprTypeT) >> id
-
-inlineGlobal :: ReExpr
-inlineGlobal = watchR "inlineGlobal" $
-  configurableInlineR AllBinders (arr okay)
- where
-   okay v = isGlobalId v
-         && not (isPrimVar v)
-         && not (dictish (varType v))
-
-okayToSubst :: CoreExpr -> Bool
-okayToSubst (Var _)  = True
-okayToSubst (Type _) = True
-okayToSubst ty       = polyOrPredTy (exprType ty)
+-- We exclude regular arguments (not.okayArg) so that the post-unfold simplifyE
+-- doesn't have much to do.
 
 letNonRecSubstSaferR :: ReExpr
 letNonRecSubstSaferR = -- letNonRecSubstSafeR  -- while experimenting
                        letNonRecSubstSafeR' (arr okayToSubst)
+ where
+   okayToSubst :: CoreExpr -> Bool
+   okayToSubst (Var _)  = True
+   okayToSubst (Type _) = True
+   okayToSubst ty       = polyOrPredTy (exprType ty)
 
 simplifyE :: ReExpr
 simplifyE = watchR "simplifyE" $ extractR simplifyR
-
--- simplifyE = extractR (simplifyR' (arr okayToSubst))
 
 -- | Replacement for HERMIT's 'simplifyR'. Uses a more conservative
 -- 'letNonRecSubstSafeR', and adds 'castFloat'.
@@ -332,7 +350,6 @@ simplifyOneStepE =
   <+ castFloat
   <+ watchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
   <+ watchR "caseFloatCaseR" caseFloatCaseR
-  <+ watchR "inlineWorkerR" inlineWorkerR
   <+ watchR "caseDefaultR" caseDefaultR
 
 simplifyWithLetFloatingR :: ReLCore
@@ -342,9 +359,6 @@ simplifyWithLetFloatingR =
  where
    rew =    simplifyOneStepE
          <+ watchR "letFloatExprNoCastR" letFloatExprNoCastR
-
--- letFloatExprNoCastR makes programs easier to read and enables some more
--- simplifications, but slows things down noticeably. Remove if we want.
 
 -- | Like 'letFloatExprNoCastR but without 'letFloatCastR'
 letFloatExprNoCastR :: ReExpr
@@ -390,23 +404,28 @@ externals =
     , externC' "cast-float-case" castFloatCaseR
     , externC' "cast-float" castFloat
     , externC' "unfold-poly" unfoldPoly
-    , externC' "inline-global" inlineGlobal
     , externC' "simplify" simplifyE  -- override HERMIT's simplify
     , externC' "simplify-was" HD.simplifyR
     , externC' "cast-float-let-rhs" castFloatLetRhsR
     , externC' "cast-float-let-body" castFloatLetBodyR
     , externC' "cast-cast" castCastR
     , externC' "optimize-cast" optimizeCastR
-    , externC' "simplify-with-let-floating" simplifyWithLetFloatingR
-    , externC' "inline-worker" inlineWorkerR
-    , externC' "unfold-worker" unfoldWorkerR
     , externC' "case-default" caseDefaultR
-
+    , externC' "unfold-no-subst" unfoldNoSubstR
+    , externC' "cse-prog" cseProg
+    , externC' "cse-guts" cseGuts
+    , externC' "cse-expr" cseExpr
     , externC' "let-float-expr" letFloatExprR
     , externC' "let-nonrec-subst-safer" letNonRecSubstSaferR
     , externC' "simplify-one-step" simplifyOneStepE
+    , externC' "simplify-with-let-floating" simplifyWithLetFloatingR
     , externC' "lint-check" lintCheckE
+    , externC' "standardize-con'" standardizeCon'
+    , externC' "let-float-expr-no-cast" letFloatExprNoCastR
     ]
+
+--     , externC' "inline-worker" inlineWorkerR
+--     , externC' "unfold-worker" unfoldWorkerR
 
 --     , externC' "bash-it" bashIt
 --     , externC' "bash-all" bashAll
@@ -418,4 +437,4 @@ externals =
 
 --     , externC' "is-dictish" isDictish
 --     , externC' "is-dict-like" isDictLike
---     , externC' "standardize-con'" standardizeCon'
+--     , externC' "inline-global" inlineGlobal

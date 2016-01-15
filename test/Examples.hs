@@ -28,6 +28,7 @@ module Examples where
 -- TODO: explicit exports
 
 import Data.Monoid (Sum(..))
+import Control.Applicative (liftA2)
 
 import TypeUnary.Vec
 
@@ -35,67 +36,92 @@ import Circat.Rep
 import Circat.Pair
 import Circat.RTree
 
-#if 1
-sumP :: Pair Int -> Int
-sumP = sum
+type Unop a = a -> a
+type Binop a = a -> Unop a
 
-sumV0 = sum :: Vec N0 Int -> Int
-sumV1 = sum :: Vec N1 Int -> Int
-sumV2 = sum :: Vec N2 Int -> Int
-sumV3 = sum :: Vec N3 Int -> Int
-sumV4 = sum :: Vec N4 Int -> Int
-sumV8 = sum :: Vec N8 Int -> Int
-#endif
+#if 0
+sump :: Pair Int -> Int
+sump = sum
 
-#if 1
-sumT0  = sum :: Tree N0 Int -> Int
-sumT1  = sum :: Tree N1 Int -> Int
-sumT2  = sum :: Tree N2 Int -> Int
-sumT3  = sum :: Tree N3 Int -> Int
-sumT4  = sum :: Tree N4 Int -> Int
-sumT5  = sum :: Tree N5 Int -> Int
-sumT6  = sum :: Tree N6 Int -> Int
-sumT7  = sum :: Tree N7 Int -> Int
-sumT8  = sum :: Tree N8 Int -> Int
-sumT16 = sum :: Tree N16 Int -> Int
+sumv0  = sum :: Vec N0 Int -> Int
+sumv1  = sum :: Vec N1 Int -> Int
+sumv2  = sum :: Vec N2 Int -> Int
+sumv3  = sum :: Vec N3 Int -> Int
+sumv4  = sum :: Vec N4 Int -> Int
+sumv8  = sum :: Vec N8 Int -> Int
+sumv16 = sum :: Vec N16 Int -> Int
 #endif
 
 #if 0
+sumt0  = sum :: Tree N0 Int -> Int
+sumt1  = sum :: Tree N1 Int -> Int
+sumt2  = sum :: Tree N2 Int -> Int
+sumt3  = sum :: Tree N3 Int -> Int
+sumt4  = sum :: Tree N4 Int -> Int
+sumt5  = sum :: Tree N5 Int -> Int
+sumt6  = sum :: Tree N6 Int -> Int
+sumt7  = sum :: Tree N7 Int -> Int
+sumt8  = sum :: Tree N8 Int -> Int
+sumt16 = sum :: Tree N16 Int -> Int
+#endif
+
+#if 01
 type N32 = N16 :+: N16
 type N64 = N32 :+: N32
 
-sumT32 = sum :: Tree N32 Int -> Int
-sumT64 = sum :: Tree N64 Int -> Int
+sumt32 = sum :: Tree N32 Int -> Int
+sumt64 = sum :: Tree N64 Int -> Int
 #endif
 
 #if 0
 type N128 =  N64 :+:  N64
 type N256 = N128 :+: N128
 
-sumT128 = sum :: Tree N128 Int -> Int
-sumT256 = sum :: Tree N256 Int -> 'Int'
-#endif
-
-#if 1
-type MV n = (Int -> Int) -> (Vec n Int -> Vec n Int)
-
-fmapV0  = fmap :: MV N0
-fmapV1  = fmap :: MV N1
-fmapV2  = fmap :: MV N2
-fmapV3  = fmap :: MV N3
-fmapV4  = fmap :: MV N4
-fmapV8  = fmap :: MV N8
-fmapV16 = fmap :: MV N16
+sumt128 = sum :: Tree N128 Int -> Int
+sumt256 = sum :: Tree N256 Int -> Int
 #endif
 
 #if 0
-type MT n = (Int -> Int) -> (RTree n Int -> RTree n Int)
+type MV n = Unop Int -> Unop (Vec n Int)
 
-fmapT0  = fmap :: MT N0
-fmapT1  = fmap :: MT N1
-fmapT2  = fmap :: MT N2
-fmapT3  = fmap :: MT N3
-fmapT4  = fmap :: MT N4
-fmapT8  = fmap :: MT N8
-fmapT16 = fmap :: MT N16
+mapv0  = fmap :: MV N0
+mapv1  = fmap :: MV N1
+mapv2  = fmap :: MV N2
+mapv3  = fmap :: MV N3
+mapv4  = fmap :: MV N4
+mapv8  = fmap :: MV N8
+mapv16 = fmap :: MV N16
+#endif
+
+#if 0
+type MT n = Unop Int -> Unop (RTree n Int)
+
+mapt0  = fmap :: MT N0
+mapt1  = fmap :: MT N1
+mapt2  = fmap :: MT N2
+mapt3  = fmap :: MT N3
+mapt4  = fmap :: MT N4
+mapt8  = fmap :: MT N8
+mapt16 = fmap :: MT N16
+#endif
+
+#if 0
+type LT n = Binop Int -> Binop (RTree n Int)
+
+liftA2T0 = liftA2 :: LT N0
+liftA2T1 = liftA2 :: LT N1
+liftA2T2 = liftA2 :: LT N2
+liftA2T3 = liftA2 :: LT N3
+liftA2T4 = liftA2 :: LT N4
+liftA2T8 = liftA2 :: LT N8
+
+#endif
+
+#if 1
+pureT1 = pure :: Int -> RTree N1 Int
+
+nat0 = nat :: Nat N0
+nat1 = nat :: Nat N1
+nat2 = nat :: Nat N2
+nat8 = nat :: Nat N8
 #endif

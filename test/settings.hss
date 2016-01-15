@@ -8,3 +8,9 @@ set-pp-coercion Omit
 -- set-pp-coercion Kind
 -- set-pp-coercion Show
 
+-- Not really part of settings, but must come before rhs-of
+try (innermost let-float)
+cse-guts  -- frequently finds common dictionaries. always succeeds
+try unshadow  -- readability
+
+
