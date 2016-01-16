@@ -27,12 +27,16 @@ import qualified Prelude
 import Control.Category (id,(.))
 import Data.Functor ((<$>),void)
 import Control.Applicative ((<*>))
+import Data.Traversable (mapAccumL)
 import Control.Arrow (arr)
 -- import Control.Monad (unless)
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf,partition)
+import Data.Maybe (catMaybes)
 import qualified Data.Set as S
 import qualified Data.Map as M
 import Data.String (fromString)
+
+import qualified Type  -- from GHC
 
 import HERMIT.Core (CoreDef(..),exprTypeM,bindsToProg,progToBinds)
 import HERMIT.Dictionary hiding (externals,simplifyR)
@@ -401,6 +405,109 @@ lintCheckE :: ReExpr
 lintCheckE = watchR "lintCheckE" id
 
 {--------------------------------------------------------------------
+    Simplify case alternatives
+--------------------------------------------------------------------}
+
+monoAlt :: CoreAlt -> Maybe CoreAlt
+monoAlt (con,vs,rhs) = tweak <$> mbSub
+ where
+   tweak :: TvSubst -> CoreAlt
+   tweak tvSub = (con,vs',substExpr (text "monoAlt") idSub' rhs)
+    where
+      (idSub',vs') = mapAccumL accum (tvSubstToSubst tvSub) vs
+      accum :: Subst -> Var -> (Subst,Var)
+      accum idSub v = (extendSubst idSub v (Var v'), v')
+       where
+         v' = setVarType v (Type.substTy tvSub (varType v))
+   (coVars,filter isId -> ids) = partition isCoVar vs
+   mbSub = uncurry (tcUnifyTys (const BindMe))
+             (unzip (coVarKind <$> filter isCoVar vs))
+
+tvSubstToSubst :: TvSubst -> Subst
+tvSubstToSubst (TvSubst in_scope tenv) =
+  Subst in_scope emptyIdSubst tenv emptyVarEnv
+ where
+   Subst _ emptyIdSubst _ _ = emptySubst  -- emptyIdSubst not exported from CoreSubst
+
+-- Prune case expressions by dropping impossible alternatives and
+-- type-specializing with information type equalities in coVars.
+pruneCaseR :: ReExpr
+pruneCaseR = caseT id id id (const (arr monoAlt))
+               (\ e w ty mbAlts -> Case e w ty (catMaybes mbAlts))
+
+-- TODO: Move monoAlt and pruneCaseR to HERMIT.Extras, and remove ghc dep here.
+
+{-
+
+The core looks good to my eye, but Core Lint says otherwise:
+
+    ...
+    case ds2 of wild Int
+      L (~# :: N1 ~N Z) a0 -> a0
+      B n0 (~# :: N1 ~N S n0) ds3 ->
+        case ds3 of wild0 Int
+          (:#) u v ->
+            (+) Int $fNumInt (sumT n0 Int $fNumInt u) (sumT n0 Int $fNumInt v)
+    hermit<6> prune-case
+    case ds2 of wild Int
+      B n0 (~# :: N1 ~N S N0) ds3 ->
+        case ds3 of wild0 Int
+          (:#) u v ->
+            (+) Int $fNumInt (sumT N0 Int $fNumInt u) (sumT N0 Int $fNumInt v)
+    hermit<7> *** Core Lint errors : in result of Core plugin:  HERMIT0 ***
+    <no location info>: Warning:
+        In the pattern of a case alternative: (B n0_s8q2 :: *,
+                                                 dt_d7Un :: N1 ~# S N0,
+                                                 ds3_s8q3 :: Pair (Tree N0 Int))
+        Argument value doesn't match argument type:
+        Fun type:
+            N1 ~# S n0_s8q2 -> Pair (Tree n0_s8q2 Int) -> RTree N1 Int
+        Arg type: N1 ~# S N0
+        Arg: dt_d7Un
+    
+Hrmph. I changed the type of `dt_d7Un` in the pattern. I guess it would
+type-check if I also replaced `n0_s8q2` by `N0`, but Core `Alt` pattern
+arguments must be variables. Hm.
+
+Well, I can still remove impossible alternatives.
+
+Maybe I can do something useful with the unifying substitutions if I enhance
+them with *equality proofs* built on the coercion variables. For instance,
+starting with `dt :: S Z ~N S m`, we could form something like `Nth 0 dt :: Z ~N
+m` and then `Sym (Nth 0 dt) :: m ~N Z`.
+
+
+-}
+
+#if 0
+
+getTvSubst :: Subst -> TvSubst
+getTvSubst (Subst in_scope _ tenv _) = TvSubst in_scope tenv
+
+type Alt b = (AltCon, [b], Expr b)
+
+data TvSubst
+  = TvSubst InScopeSet  -- The in-scope type and kind variables
+            TvSubstEnv  -- Substitutes both type and kind variables
+
+data Subst
+  = Subst InScopeSet  -- Variables in in scope (both Ids and TyVars) /after/
+                      -- applying the substitution
+          IdSubstEnv  -- Substitution for Ids
+          TvSubstEnv  -- Substitution from TyVars to Types
+          CvSubstEnv  -- Substitution from CoVars to Coercions
+
+substIdType :: Subst -> Id -> Id
+
+
+setVarType :: Id -> Type -> Id
+setVarType id ty = id { varType = ty }
+
+mapAccumL :: Traversable t => (a -> b -> (a, c)) -> a -> t b -> (a, t c)
+
+#endif
+
+{--------------------------------------------------------------------
     Plugin
 --------------------------------------------------------------------}
 
@@ -430,6 +537,7 @@ externals =
     , externC' "optimize-cast" optimizeCastR
     , externC' "case-default" caseDefaultR
     , externC' "unfold-safe" unfoldSafeR
+    , externC' "prune-case" pruneCaseR
     , externC' "cse-prog" cseProg
     , externC' "cse-guts" cseGuts
     , externC' "cse-expr" cseExpr
