@@ -86,7 +86,7 @@ castFloatLetBodyR =
 --------------------------------------------------------------------}
 
 observing :: Observing
-observing = False
+observing = True
 
 -- #define LintDie
 
@@ -127,25 +127,16 @@ hasRepMethodF =
   prefixFailMsg "hasRepMethodF failed: " $
   do ty <- id
      -- The following check avoids a problem in buildDictionary.
-     guardMsg (not (isEqPred ty)) "Predicate type"  -- *
+     guardMsg (not (isEqPred ty)) "Predicate type"  -- still needed?
      guardMsg (closedType ty) "Type has free variables"
      hasRepTc <- findTyConT (repName "HasRep")
      dict  <- prefixFailMsg "Couldn't build dictionary." $
-              ( -- tryR (watchR "simplify-dict" simplifyE)
-                -- tryR (watchR "bash-dict" bashE)
-                id
-              . {- watchR' "buildDictionaryT" -} buildDictionaryT)
-                $* TyConApp hasRepTc [ty]
+              buildDictionaryT $* TyConApp hasRepTc [ty]
      repTc <- findTyConT (repName "Rep")
      (mkEqBox -> eq,ty') <- prefixFailMsg "normaliseTypeT failed: "$
                             normaliseTypeT Nominal $* TyConApp repTc [ty]
-     return $ \ meth ->
-       prefixFailMsg "apps' failed: " $
-       -- tryR (watchR "bash-method-selection" bashE) .
-       do m <- tryR inlineR . (Var <$> findIdT (repName meth))
-          -- TODO: composition ev' <- (if ...) . (Var <$> ...)
-          return $ 
-                 mkApps m [Type ty,dict,Type ty',eq]
+     return $ \ meth -> prefixFailMsg "apps' failed: " $
+                        apps' (repName meth) [ty] [dict,Type ty',eq]
 
 -- Would it be faster to also simplify/bash the dictionary so that we share that
 -- much for multi-use? See notes for 2015-01-14.
@@ -157,8 +148,6 @@ hasRepMethodF =
 
 hasRepMethodT :: TransformH Type (String -> ReExpr)
 hasRepMethodT = (\ f -> \ s -> App <$> f s <*> id) <$> hasRepMethodF
-
--- TODO: Rethink these three names
 
 -- In Core, abst is
 -- abst ty $hasRepTy ty' (Eq# * ty' (Rep ty) (sym (co :: Rep ty ~ ty'))),
@@ -179,11 +168,11 @@ abst'Repr = -- watchR "abst'Repr" $
 -- | e ==> abst (repr' e).
 abstRepr' :: ReExpr
 abstRepr' = -- watchR "abstRepr'" $
-            -- simplifyE .  -- must succeed
             do meth <- hasRepMethodT . exprTypeT
                meth "abst" . meth "repr'"
 
 -- TODO: Refactor
+-- TODO: Rethink these three names
 
 -- Do one unfolding, and then a second one only if the inlining result is a
 -- worker, as in the case of a method lifted to the top level.
@@ -199,11 +188,31 @@ unfoldDollar :: ReExpr
 unfoldDollar = watchR "unfoldDollar" $
                unfoldPredR (\ v _ -> isPrefixOf "$" (uqVarName v))
 
+-- -- Prepare to eliminate non-standard constructor applications (fully saturated).
+-- standardizeCon :: ReExpr
+-- standardizeCon = watchR "standardizeCon" $
+--                  go . rejectR isType
+--  where
+--    go   = (lamAllR id go . etaExpandR "eta") <+ doit
+--    doit = appAllR id elimCon . (callDataConT >> abst'Repr)
+--    elimCon = 
+
+
+   -- elimCon = appAllR unfoldMethod id
+
+-- Prepare to eliminate non-standard constructor applications (fully saturated).
+standardizeCon :: ReExpr
+standardizeCon = watchR "standardizeCon" $
+                 go . rejectR isType
+ where
+   go   = (lamAllR id go . etaExpandR "eta") <+ doit
+   doit = appAllR id (appAllR unfoldMethod id)
+        . (callDataConT >> abst'Repr)
+
 -- Simplified version, leaving more work for another pass.
 standardizeCase :: ReExpr
 standardizeCase = watchR "standardizeCase" $
-  caseReducePlusR .
-  onScrutineeR (simplifyE . abstRepr')
+  caseReducePlusR . onScrutineeR abstRepr'
 
 -- TODO: For efficiency, try to narrow the scope of this simplifyE, and/or
 -- replace with a more specific strategy.
@@ -213,9 +222,9 @@ caseReducePlusR :: ReExpr
 caseReducePlusR = go . acceptWithFailMsgR isCase "Not a case"
  where
    go =  caseReduceR False
-      <+ (go . onScrutineeR unfoldSafeR)
       <+ (letAllR id go . letFloatCaseR)
       <+ (onAltRhss go . caseFloatCaseR)
+      <+ (go . onScrutineeR (unfoldSafeR <+ simplifyE))
 
 onAltRhss :: Unop ReExpr
 onAltRhss r = caseAllR id id id (const (altAllR id (const id) r))
@@ -240,37 +249,9 @@ unfoldPredSafeR p = callPredT p >> unfoldSafeR
 betaReducePlusSafer :: ReExpr
 betaReducePlusSafer = betaReduceSafePlusR (arr okayToSubst)
 
--- Prepare to eliminate non-standard constructor applications (fully saturated).
-standardizeCon :: ReExpr
-standardizeCon = watchR "standardizeCon" $
-                 tryR (watchR "standardizeCon simplify" simplifyE)
-                  . go . rejectR isType
- where
-   go = doit <+ (lamAllR id go . etaExpandR "eta")
-   doit = appAllR id (appAllR unfoldMethod id)
-        . (callDataConT >> abst'Repr)
-
--- TODO: Ensure that standardizeCon accomplishes its goal or fails.
-
--- Prepare to eliminate non-standard constructor applications (fully saturated).
-standardizeCon' :: ReExpr
-standardizeCon' = watchR "standardizeCon'" $
-                  {- tryR simplifyE . -} go . rejectR isType
- where
-   go = doit <+ (lamAllR id go . etaExpandR "eta")
-   doit = id -- appAllR id (appAllR unfoldMethod id)
-        . (callDataConT >> abst'Repr)
-
+-- Since we're traversing top-down, the eta-expand will only happen if necessary.
 -- etaExpandR dies on Type t. Avoided via rejectR isType
-
--- TODO: somehow prevent standardizeCase and standardizeCon from looping.
--- Must I explicitly add other transformations?
-
--- For now, I'm simplifying after standardizeCon and standardizeCase, for easier
--- inspection.
-
--- To do: check that the transformations accomplished their goal (which will
--- require simplification).
+-- To do: check that standardizeCon accomplished its goal.
 
 unfoldNonPrim :: ReExpr
 unfoldNonPrim =
@@ -408,7 +389,7 @@ letFloatExprNoCastR = setFailMsg "Unsuitable expression for Let floating." $
 -- variables where the wildcard variable isn't used. If wild is a dead Id, don't
 -- bother substituting.
 caseDefaultR :: ReExpr
-caseDefaultR =
+caseDefaultR = prefixFailMsg "caseDefaultR failed: " $
   do Case scrut wild _ [(_,[],body)] <- id
      case idOccInfo wild of
        IAmDead -> return body
@@ -457,13 +438,13 @@ externals =
     , externC' "simplify-one-step" simplifyOneStepE
     , externC' "simplify-with-let-floating" simplifyWithLetFloatingR
     , externC' "lint-check" lintCheckE
-    , externC' "standardize-con'" standardizeCon'
     , externC' "let-float-expr-no-cast" letFloatExprNoCastR
     , externC' "case-reduce-plus" caseReducePlusR
     , externC' "beta-reduce-plus-safer" betaReducePlusSafer
     , externC' "inline-head" inlineHeadR
     ]
 
+--     , externC' "standardize-con'" standardizeCon'
 --     , externC' "beta-reduce-safe" betaReduceSafeR
 
 --     , externC' "inline-worker" inlineWorkerR
