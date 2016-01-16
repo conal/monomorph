@@ -39,7 +39,7 @@ import Circat.RTree
 type Unop a = a -> a
 type Binop a = a -> Unop a
 
-#if 0
+#if 1
 sump :: Pair Int -> Int
 sump = sum
 
@@ -52,7 +52,7 @@ sumv8  = sum :: Vec N8 Int -> Int
 sumv16 = sum :: Vec N16 Int -> Int
 #endif
 
-#if 0
+#if 1
 sumt0  = sum :: Tree N0 Int -> Int
 sumt1  = sum :: Tree N1 Int -> Int
 sumt2  = sum :: Tree N2 Int -> Int
@@ -65,7 +65,7 @@ sumt8  = sum :: Tree N8 Int -> Int
 sumt16 = sum :: Tree N16 Int -> Int
 #endif
 
-#if 01
+#if 0
 type N32 = N16 :+: N16
 type N64 = N32 :+: N32
 
@@ -81,7 +81,7 @@ sumt128 = sum :: Tree N128 Int -> Int
 sumt256 = sum :: Tree N256 Int -> Int
 #endif
 
-#if 0
+#if 1
 type MV n = Unop Int -> Unop (Vec n Int)
 
 mapv0  = fmap :: MV N0
@@ -93,7 +93,7 @@ mapv8  = fmap :: MV N8
 mapv16 = fmap :: MV N16
 #endif
 
-#if 0
+#if 1
 type MT n = Unop Int -> Unop (RTree n Int)
 
 mapt0  = fmap :: MT N0
@@ -117,11 +117,23 @@ liftA2T8 = liftA2 :: LT N8
 
 #endif
 
-#if 1
+#if 0
 pureT1 = pure :: Int -> RTree N1 Int
 
 nat0 = nat :: Nat N0
 nat1 = nat :: Nat N1
 nat2 = nat :: Nat N2
 nat8 = nat :: Nat N8
+#endif
+
+nat0 = Zero
+nat1 = Succ nat0
+nat2 = Succ nat1
+
+#if 1
+t0 :: RTree N0 Int
+t0 = L 5
+
+t1 :: RTree N1 Int
+t1 = B (L 3 :# L 4)
 #endif

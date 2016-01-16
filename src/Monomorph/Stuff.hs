@@ -3,7 +3,7 @@
 {-# OPTIONS_GHC -Wall #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
--- {-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
+{-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
 
 ----------------------------------------------------------------------
 -- |
@@ -81,16 +81,6 @@ castFloatLetBodyR =
      return $
        Cast (Let bind body) co
 
--- | Like 'unfoldR' but without the substitution
-unfoldNoSubstR :: ReExpr
-unfoldNoSubstR = prefixFailMsg "unfold failed: " go
- where 
-   go = appAllR go idR <+ inlineR
-
-unfoldPredNoSubstR :: (Id -> [CoreExpr] -> Bool) -> ReExpr
-unfoldPredNoSubstR p = callPredT p >> unfoldNoSubstR
-
-
 {--------------------------------------------------------------------
     Observing
 --------------------------------------------------------------------}
@@ -114,12 +104,13 @@ watchR lab r = labeled' observing (lab,r)  -- don't lint
 watchR' :: (InCoreTC a, Injection b LCoreTC)
        => String -> TransformH a b -> TransformH a b
 watchR' lab r = labeled' observing (lab,r)  -- don't lint
-#endif
 
--- nowatchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
+nowatchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
+nowatchR _ = id
+
 -- nowatchR = watchR
 
--- nowatchR _ = id
+#endif
 
 {--------------------------------------------------------------------
     Monomorphization
@@ -143,14 +134,18 @@ hasRepMethodF =
               ( -- tryR (watchR "simplify-dict" simplifyE)
                 -- tryR (watchR "bash-dict" bashE)
                 id
-              . watchR' "buildDictionaryT" buildDictionaryT)
+              . {- watchR' "buildDictionaryT" -} buildDictionaryT)
                 $* TyConApp hasRepTc [ty]
      repTc <- findTyConT (repName "Rep")
      (mkEqBox -> eq,ty') <- prefixFailMsg "normaliseTypeT failed: "$
                             normaliseTypeT Nominal $* TyConApp repTc [ty]
-     return $ \ meth -> prefixFailMsg "apps' failed: " $
-                        tryR (watchR "bash-method-selection" bashE) .
-                        apps' (repName meth) [ty] [dict,Type ty',eq]
+     return $ \ meth ->
+       prefixFailMsg "apps' failed: " $
+       -- tryR (watchR "bash-method-selection" bashE) .
+       do m <- tryR inlineR . (Var <$> findIdT (repName meth))
+          -- TODO: composition ev' <- (if ...) . (Var <$> ...)
+          return $ 
+                 mkApps m [Type ty,dict,Type ty',eq]
 
 -- Would it be faster to also simplify/bash the dictionary so that we share that
 -- much for multi-use? See notes for 2015-01-14.
@@ -179,20 +174,23 @@ abstRepr = -- watchR "abstRepr" $
 abst'Repr :: ReExpr
 abst'Repr = -- watchR "abst'Repr" $
             do meth <- hasRepMethodT . exprTypeT
-               meth "abst'" . watchR "simplify-repr" (meth "repr")
+               meth "abst'" . meth "repr"
 
 -- | e ==> abst (repr' e).
 abstRepr' :: ReExpr
 abstRepr' = -- watchR "abstRepr'" $
+            -- simplifyE .  -- must succeed
             do meth <- hasRepMethodT . exprTypeT
-               watchR "simplify-abst" (meth "abst") . meth "repr'"
+               meth "abst" . meth "repr'"
+
+-- TODO: Refactor
 
 -- Do one unfolding, and then a second one only if the inlining result is a
 -- worker, as in the case of a method lifted to the top level.
 unfoldMethod :: ReExpr
 unfoldMethod = -- watchR "unfoldMethod" $
     tryR unfoldDollar  -- revisit
-  . tryR simplifyE
+  . tryR (watchR "unfoldMethod simplify" simplifyE)
   . unfoldR
 
 -- TODO: Do I still need unfoldMethod, or can I use unfoldPoly instead?
@@ -204,19 +202,55 @@ unfoldDollar = watchR "unfoldDollar" $
 -- Simplified version, leaving more work for another pass.
 standardizeCase :: ReExpr
 standardizeCase = watchR "standardizeCase" $
- tryR simplifyE .
- onScrutineeR (appAllR unfoldMethod id . abstRepr')
+  caseReducePlusR .
+  onScrutineeR (simplifyE . abstRepr')
 
--- unfoldMethod under appAllR so that we unfoldR won't replicate work.
+-- TODO: For efficiency, try to narrow the scope of this simplifyE, and/or
+-- replace with a more specific strategy.
+
+-- More ambitious caseReduceR.
+caseReducePlusR :: ReExpr
+caseReducePlusR = go . acceptWithFailMsgR isCase "Not a case"
+ where
+   go =  caseReduceR False
+      <+ (go . onScrutineeR unfoldSafeR)
+      <+ (letAllR id go . letFloatCaseR)
+      <+ (onAltRhss go . caseFloatCaseR)
+
+onAltRhss :: Unop ReExpr
+onAltRhss r = caseAllR id id id (const (altAllR id (const id) r))
+
+isCase :: CoreExpr -> Bool
+isCase (Case {}) = True
+isCase _         = False
+
+-- | Like 'unfoldR', but without work duplication
+unfoldSafeR :: ReExpr
+unfoldSafeR = prefixFailMsg "unfoldSafeR failed: " $
+  tryR betaReducePlusSafer . inlineHeadR
+
+inlineHeadR :: ReExpr
+inlineHeadR = {- watchR "inlineHeadR" -} go
+ where
+   go = appAllR go idR <+ inlineR
+
+unfoldPredSafeR :: (Id -> [CoreExpr] -> Bool) -> ReExpr
+unfoldPredSafeR p = callPredT p >> unfoldSafeR
+
+betaReducePlusSafer :: ReExpr
+betaReducePlusSafer = betaReduceSafePlusR (arr okayToSubst)
 
 -- Prepare to eliminate non-standard constructor applications (fully saturated).
 standardizeCon :: ReExpr
 standardizeCon = watchR "standardizeCon" $
-                 tryR simplifyE . go . rejectR isType
+                 tryR (watchR "standardizeCon simplify" simplifyE)
+                  . go . rejectR isType
  where
    go = doit <+ (lamAllR id go . etaExpandR "eta")
    doit = appAllR id (appAllR unfoldMethod id)
         . (callDataConT >> abst'Repr)
+
+-- TODO: Ensure that standardizeCon accomplishes its goal or fails.
 
 -- Prepare to eliminate non-standard constructor applications (fully saturated).
 standardizeCon' :: ReExpr
@@ -244,7 +278,7 @@ unfoldNonPrim =
 
 unfoldNonPrim' :: ReExpr
 unfoldNonPrim' = watchR "unfoldNonPrim" $
-                 tryR simplifyE .
+                 tryR (watchR "unfoldNonPrim' simplify" simplifyE) .
                  do ty <- exprTypeT
                     guardMsg (simple ty) "Non-simple arguments"
                     prefixFailMsg "Given primitive."
@@ -282,7 +316,7 @@ rangeType                   ty  = ty
 
 -- | Various single-step cast-floating rewrite
 castFloat :: ReExpr
-castFloat = watchR "castFloat" $
+castFloat =
      {- watchR "castFloatAppR"     -} castFloatAppR
   <+ {- watchR "castFloatLamR"     -} castFloatLamR
   <+ {- watchR "castFloatCaseR"    -} castFloatCaseR
@@ -308,7 +342,8 @@ unfoldPoly :: ReExpr
 unfoldPoly = watchR "unfoldPoly" $
   do ty <- exprTypeT -- rejects Type t
      guardMsg (not (polyOrPredTy ty)) "Must not involve polymorphism or predicates"
-     tryR simplifyE . unfoldPredNoSubstR (okay ty)
+     id -- watchR "unfold & simplify for unfoldPoly"
+       (tryR simplifyE . unfoldPredSafeR (okay ty)) -- TODO: replace simplifyE
  where
    okay ty v args =  not (isPrimVar v && primTy)
                   && (isGlobalId v || if null args then isPolyTy (varType v) else all okayArg args)
@@ -323,14 +358,15 @@ unfoldPoly = watchR "unfoldPoly" $
 letNonRecSubstSaferR :: ReExpr
 letNonRecSubstSaferR = -- letNonRecSubstSafeR  -- while experimenting
                        letNonRecSubstSafeR' (arr okayToSubst)
- where
-   okayToSubst :: CoreExpr -> Bool
-   okayToSubst (Var _)  = True
-   okayToSubst (Type _) = True
-   okayToSubst ty       = polyOrPredTy (exprType ty)
+
+okayToSubst :: CoreExpr -> Bool
+okayToSubst (Var _)   = True
+okayToSubst (Type _)  = True
+okayToSubst (Lam _ e) = okayToSubst e
+okayToSubst ty        = polyOrPredTy (exprType ty)
 
 simplifyE :: ReExpr
-simplifyE = watchR "simplifyE" $ extractR simplifyR
+simplifyE = {- watchR "simplifyE" $ -} extractR simplifyR
 
 -- | Replacement for HERMIT's 'simplifyR'. Uses a more conservative
 -- 'letNonRecSubstSafeR', and adds 'castFloat'.
@@ -340,17 +376,18 @@ simplifyR =
   innermostR (promoteBindR recToNonrecR <+ promoteExprR simplifyOneStepE)
 
 simplifyOneStepE :: ReExpr
-simplifyOneStepE =
-     watchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
-  <+ watchR "betaReduceR" betaReduceR
-  <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
-  <+ watchR "caseReduceR" (caseReduceR False)
-  <+ watchR "letElimR" letElimR
+simplifyOneStepE = -- watchR "simplifyOneStepE" $
+     nowatchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
+  <+ nowatchR "betaReduceR" betaReduceR
+  <+ nowatchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
+  <+ nowatchR "caseReduceR" (caseReduceR False)
+  <+ nowatchR "letElimR" letElimR
   -- added
-  <+ castFloat
-  <+ watchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
-  <+ watchR "caseFloatCaseR" caseFloatCaseR
-  <+ watchR "caseDefaultR" caseDefaultR
+  <+ nowatchR "castFloat" castFloat
+  <+ nowatchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
+  <+ nowatchR "caseFloatCaseR" caseFloatCaseR
+  <+ nowatchR "caseDefaultR" caseDefaultR
+
 
 simplifyWithLetFloatingR :: ReLCore
 simplifyWithLetFloatingR =
@@ -411,7 +448,7 @@ externals =
     , externC' "cast-cast" castCastR
     , externC' "optimize-cast" optimizeCastR
     , externC' "case-default" caseDefaultR
-    , externC' "unfold-no-subst" unfoldNoSubstR
+    , externC' "unfold-safe" unfoldSafeR
     , externC' "cse-prog" cseProg
     , externC' "cse-guts" cseGuts
     , externC' "cse-expr" cseExpr
@@ -422,7 +459,12 @@ externals =
     , externC' "lint-check" lintCheckE
     , externC' "standardize-con'" standardizeCon'
     , externC' "let-float-expr-no-cast" letFloatExprNoCastR
+    , externC' "case-reduce-plus" caseReducePlusR
+    , externC' "beta-reduce-plus-safer" betaReducePlusSafer
+    , externC' "inline-head" inlineHeadR
     ]
+
+--     , externC' "beta-reduce-safe" betaReduceSafeR
 
 --     , externC' "inline-worker" inlineWorkerR
 --     , externC' "unfold-worker" unfoldWorkerR

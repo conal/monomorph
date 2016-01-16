@@ -32,7 +32,15 @@ compile-extras:
 
 compile-all: compile-circat compile-extras compile-mono
 
-##
+## Testing
+
+test:
+	make mapv2.done
+	make sumv2.done
+	make mapt2.done
+	make sumt2.done
+
+## Timing
 
 timing-mapt:
 	make mapt1.time3 > out/mapt1

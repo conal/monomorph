@@ -4,20 +4,26 @@ set-pp-width 80
 -- set-pp-type     Omit
 set-pp-type     Show
 
--- set-pp-coercion Kind
-set-pp-coercion Show
+set-pp-coercion Kind
+-- set-pp-coercion Show
 -- set-pp-coercion Omit
 
 --------
 
-rhs-of 'liftA2T0
+rhs-of 'sumt1
 
-any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
-try simplify-with-let-floating
-try unshadow
+observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
+observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
+observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
+observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
+observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
+
+-- any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
+-- try simplify-with-let-floating
+-- try unshadow
 
 -- application-of 'repr'
 -- [app-fun,app-arg,app-fun,app-fun,app-fun,app-fun] -- to case
 -- case-expr                                         --
 
-occurrence-of '$p1Applicative
+-- occurrence-of '$p1Applicative
