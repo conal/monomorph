@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, TupleSections, GADTs, TypeOperators #-}
+{-# LANGUAGE CPP, TupleSections, GADTs, TypeOperators, Rank2Types #-}
 {-# OPTIONS_GHC -Wall #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
@@ -38,6 +38,21 @@ import Circat.RTree
 
 type Unop a = a -> a
 type Binop a = a -> Unop a
+
+#if 0
+t0 :: RTree N0 Int
+t0 = L 5
+
+t1 :: RTree N1 Int
+t1 = B (L 3 :# L 4)
+
+sumT :: Num a => Tree n a -> a
+sumT (L a)      = a
+sumT (B (u :# v)) = sumT u + sumT v
+
+s1 :: Tree N1 Int -> Int
+s1 = sumT
+#endif
 
 #if 0
 sump :: Pair Int -> Int
@@ -106,6 +121,18 @@ mapt16 = fmap :: MT N16
 #endif
 
 #if 0
+nat0 = nat :: Nat N0
+nat1 = nat :: Nat N1
+nat2 = nat :: Nat N2
+nat4 = nat :: Nat N4
+nat8 = nat :: Nat N8
+#else
+nat0 = Zero
+nat1 = Succ nat0
+nat2 = Succ nat1
+#endif
+
+#if 0
 
 purep  = pure :: Int -> Pair Int
 
@@ -163,7 +190,7 @@ lifta2t4 = liftA2 :: LT N4
 lifta2t8 = liftA2 :: LT N8
 #endif
 
-#if 1
+#if 0
 add :: (Applicative f, Num a) => Binop (f a)
 add = liftA2 (+)
 
@@ -184,29 +211,12 @@ addt4 = add :: Binop (RTree N4 Int)
 addt8 = add :: Binop (RTree N8 Int)
 #endif
 
-#if 0
-nat0 = nat :: Nat N0
-nat1 = nat :: Nat N1
-nat2 = nat :: Nat N2
-nat4 = nat :: Nat N4
-nat8 = nat :: Nat N8
-#else
-nat0 = Zero
-nat1 = Succ nat0
-nat2 = Succ nat1
-#endif
+#if 1
+type Tr g f = g (f Int) -> f (g Int)
 
-#if 0
-t0 :: RTree N0 Int
-t0 = L 5
+transpose_pt1  = sequenceA :: Tr Pair (RTree N1)
+transpose_pt2  = sequenceA :: Tr Pair (RTree N2)
+transpose_v3t2 = sequenceA :: Tr (Vec N3) (RTree N2)
+transpose_v5t4 = sequenceA :: Tr (Vec N5) (RTree N4)
 
-t1 :: RTree N1 Int
-t1 = B (L 3 :# L 4)
-
-sumT :: Num a => Tree n a -> a
-sumT (L a)      = a
-sumT (B (u :# v)) = sumT u + sumT v
-
-s1 :: Tree N1 Int -> Int
-s1 = sumT
 #endif
