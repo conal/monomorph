@@ -377,10 +377,9 @@ simplifyOneStepE :: ReExpr
 simplifyOneStepE = -- watchR "simplifyOneStepE" $
      nowatchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
   <+ nowatchR "betaReduceR" betaReduceR
+  <+ nowatchR "letElimR" letElimR
   <+ nowatchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
   <+ nowatchR "caseReduceR" (caseReduceR False)
-  <+ nowatchR "letElimR" letElimR
-  -- added
   <+ nowatchR "castFloat" castFloat
   <+ nowatchR "caseReducePlusR" caseReducePlusR
   <+ nowatchR "caseFloatCaseR" caseFloatCaseR

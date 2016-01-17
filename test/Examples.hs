@@ -65,9 +65,7 @@ sumv3  = sum :: Vec N3 Int -> Int
 sumv4  = sum :: Vec N4 Int -> Int
 sumv8  = sum :: Vec N8 Int -> Int
 sumv16 = sum :: Vec N16 Int -> Int
-#endif
 
-#if 0
 sumt0  = sum :: Tree N0 Int -> Int
 sumt1  = sum :: Tree N1 Int -> Int
 sumt2  = sum :: Tree N2 Int -> Int
@@ -81,17 +79,13 @@ sumt16 = sum :: Tree N16 Int -> Int
 #endif
 
 #if 0
-type N32 = N16 :+: N16
-type N64 = N32 :+: N32
-
-sumt32 = sum :: Tree N32 Int -> Int
-sumt64 = sum :: Tree N64 Int -> Int
-#endif
-
-#if 0
+type N32  =  N16 :+: N16
+type N64  =  N32 :+: N32
 type N128 =  N64 :+:  N64
 type N256 = N128 :+: N128
 
+sumt32  = sum :: Tree N32 Int -> Int
+sumt64  = sum :: Tree N64 Int -> Int
 sumt128 = sum :: Tree N128 Int -> Int
 sumt256 = sum :: Tree N256 Int -> Int
 #endif
@@ -106,9 +100,7 @@ mapv3  = fmap :: MV N3
 mapv4  = fmap :: MV N4
 mapv8  = fmap :: MV N8
 mapv16 = fmap :: MV N16
-#endif
 
-#if 0
 type MT n = Unop Int -> Unop (RTree n Int)
 
 mapt0  = fmap :: MT N0
