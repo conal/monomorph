@@ -2,8 +2,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -Wall #-}
 
-{-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
-{-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
+-- {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
+-- {-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
 
 ----------------------------------------------------------------------
 -- |
@@ -22,31 +22,28 @@ module Monomorph.Stuff (plugin) where
 -- TODO: explicit exports
 
 import Prelude hiding (id,(.))
-import qualified Prelude
 
 import Control.Category (id,(.))
-import Data.Functor ((<$>),void)
-import Control.Applicative ((<*>))
-import Data.Traversable (mapAccumL)
+import Data.Functor (void)
 import Control.Arrow (arr)
--- import Control.Monad (unless)
-import Data.List (isPrefixOf,partition)
-import Data.Maybe (catMaybes,isJust)
+import Data.List (isPrefixOf)
 import qualified Data.Set as S
-import qualified Data.Map as M
-import Data.String (fromString)
 
+-- #define CaseMono
+#ifdef MonoCase
+import Data.List (partition)
+import Data.Traversable (mapAccumL)
+import Data.Maybe (catMaybes,isJust)
 import qualified Type  -- from GHC
+#endif
 
-import HERMIT.Core (CoreDef(..),exprTypeM,bindsToProg,progToBinds)
 import HERMIT.Dictionary hiding (externals,simplifyR)
 import qualified HERMIT.Dictionary as HD
-import HERMIT.External (External,external)
+import HERMIT.External (External)
 import HERMIT.GHC
 import HERMIT.Kure hiding ((<$>),(<*>))
 import HERMIT.Plugin (hermitPlugin,pass,interactive)
-import HERMIT.Name (HermitName,newGlobalIdH)
-import HERMIT.Monad (getModGuts,getHscEnv)
+import HERMIT.Name (HermitName)
 
 import HERMIT.Extras hiding (simplifyE)
 
@@ -108,11 +105,6 @@ watchR lab r = lintingExprR lab (labeled observing (lab,r)) -- hard error
 
 watchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
 watchR lab r = labeled' observing (lab,r)  -- don't lint
-
--- Experiment. To replace watchR when labeled' replaces labeled. Rename both.
-watchR' :: (InCoreTC a, Injection b LCoreTC)
-       => String -> TransformH a b -> TransformH a b
-watchR' lab r = labeled' observing (lab,r)  -- don't lint
 
 nowatchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
 nowatchR _ = id
@@ -293,12 +285,6 @@ primNames = S.fromList
 isPrimVar :: Var -> Bool
 isPrimVar v = fqVarName v `S.member` primNames
 
-rangeType :: Type -> Type
-rangeType (coreView -> Just ty) = rangeType ty
-rangeType (FunTy _          ty) = rangeType ty
-rangeType (ForAllTy _       ty) = rangeType ty
-rangeType                   ty  = ty
-
 -- | Various single-step cast-floating rewrite
 castFloat :: ReExpr
 castFloat =
@@ -412,7 +398,7 @@ caseDefaultR = prefixFailMsg "caseDefaultR failed: " $
 
 -- Examples go a little faster (< 3%) with the IAmDead test.
 
-#if 0
+#ifdef MonoCase
 {--------------------------------------------------------------------
     Attempts at case monomorphization/pruning.
 --------------------------------------------------------------------}
