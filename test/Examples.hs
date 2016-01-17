@@ -211,12 +211,11 @@ addt4 = add :: Binop (RTree N4 Int)
 addt8 = add :: Binop (RTree N8 Int)
 #endif
 
-#if 1
+#if 0
 type Tr g f = g (f Int) -> f (g Int)
 
 transpose_pt1  = sequenceA :: Tr Pair (RTree N1)
 transpose_pt2  = sequenceA :: Tr Pair (RTree N2)
 transpose_v3t2 = sequenceA :: Tr (Vec N3) (RTree N2)
 transpose_v5t4 = sequenceA :: Tr (Vec N5) (RTree N4)
-
 #endif
