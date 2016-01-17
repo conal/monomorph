@@ -31,7 +31,7 @@ import Data.Traversable (mapAccumL)
 import Control.Arrow (arr)
 -- import Control.Monad (unless)
 import Data.List (isPrefixOf,partition)
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes,isJust)
 import qualified Data.Set as S
 import qualified Data.Map as M
 import Data.String (fromString)
@@ -186,7 +186,7 @@ unfoldMethod = -- watchR "unfoldMethod" $
   . tryR (watchR "unfoldMethod simplify" simplifyE)
   . unfoldR
 
--- TODO: Do I still need unfoldMethod, or can I use unfoldPoly instead?
+-- TODO: Do I still need unfoldMethod, or can I use unfoldPolyR instead?
 
 unfoldDollar :: ReExpr
 unfoldDollar = watchR "unfoldDollar" $
@@ -211,7 +211,17 @@ standardizeCon = watchR "standardizeCon" $
  where
    go   = (lamAllR id go . etaExpandR "eta") <+ doit
    doit = appAllR id (appAllR unfoldMethod id)
-        . (callDataConT >> abst'Repr)
+        . (reallyCallDataCon >> abst'Repr)
+
+-- *Really* a datacon call. Some casts satisfy callDataConT, perhaps due to the
+-- representation of single-method dictionaries via a cast.
+reallyCallDataCon :: FilterE
+reallyCallDataCon =
+  do void (acceptWithFailMsgR (not . isCast) "Cast") -- casts can appear as datacons
+     void callDataConT
+ where
+   isCast (Cast {}) = True
+   isCast _         = False
 
 -- Simplified version, leaving more work for another pass.
 standardizeCase :: ReExpr
@@ -323,19 +333,32 @@ polyOrPredTy (ForAllTy {})         = True
 polyOrPredTy (FunTy dom ran)       = polyOrPredTy dom || polyOrPredTy ran
 polyOrPredTy ty                    = isPredTy ty
 
-unfoldPoly :: ReExpr
-unfoldPoly = watchR "unfoldPoly" $
+unfoldPolyR :: ReExpr
+unfoldPolyR = watchR "unfoldPolyR" $
   do ty <- exprTypeT -- rejects Type t
      guardMsg (not (polyOrPredTy ty)) "Must not involve polymorphism or predicates"
-     id -- watchR "unfold & simplify for unfoldPoly"
-       (tryR simplifyE . unfoldPredSafeR (okay ty)) -- TODO: replace simplifyE
+     id -- watchR "unfold & simplify for unfoldPolyR"
+       (tryR simplifyE . (unfoldPredSafeR (okay ty) <+ unfoldDictCastR)) -- TODO: replace simplifyE
  where
    okay ty v args =  not (isPrimVar v && primTy)
-                  && (isGlobalId v || if null args then isPolyTy (varType v) else all okayArg args)
+                  && (isGlobalId v || if null args then isPolyTy vty else all okayArg args)
     where
+      vty = varType v
       okayArg (Type _) = True
       okayArg arg      = isDictLikeTy (exprType arg)
       primTy = const True ty                     -- TODO: Fix
+
+-- | Unfold under a cast of a dictionary. Corresponds to a single-method type class.
+unfoldDictCastR :: ReExpr
+unfoldDictCastR = watchR "unfoldDictCastR" $
+                  castAllR (unfoldSafeR . acceptR (isDictLikeTy . exprType)) id
+
+--    dictish :: Type -> Bool
+--    dictish (coreView -> Just ty) = dictish ty
+--    dictish (ForAllTy _ ty)       = dictish ty
+--    dictish (FunTy dom ran)       = dictish dom || dictish ran
+--    dictish ty                    = isDictLikeTy ty
+
 
 -- We exclude regular arguments (not.okayArg) so that the post-unfold simplifyE
 -- doesn't have much to do.
@@ -405,8 +428,30 @@ lintCheckE :: ReExpr
 lintCheckE = watchR "lintCheckE" id
 
 {--------------------------------------------------------------------
-    Simplify case alternatives
+    Attempts at case monomorphization/pruning.
 --------------------------------------------------------------------}
+
+-- Not working, and I don't know how to solve. See my journal for 2015-01-16.
+
+-- -- Prune case expressions by dropping impossible alternatives and
+-- -- type-specializing with information type equalities in coVars.
+-- pruneCaseR :: ReExpr
+-- pruneCaseR = watchR "pruneCaseR" $
+--   do Case e w ty (map check -> mbAlts) <- id
+--      guardMsg (not (all isJust mbAlts)) "No impossible alternatives"
+--      return (Case e w ty (catMaybes mbAlts))
+--  where
+--    check :: CoreAlt -> Maybe CoreAlt
+--    check lt@(_,vs,_) = lt <$ uncurry (tcUnifyTys (const BindMe))
+--                                (unzip (coVarKind <$> filter isCoVar vs))
+
+-- Oops. Since I don't substitute into RHSs in this version, I lose monomorphism.
+
+pruneCaseR :: ReExpr
+pruneCaseR = watchR "pruneCaseR" $
+  do Case e w ty (map monoAlt -> mbAlts) <- id
+     guardMsg (not (all isJust mbAlts)) "No impossible alternatives"
+     return (Case e w ty (catMaybes mbAlts))
 
 monoAlt :: CoreAlt -> Maybe CoreAlt
 monoAlt (con,vs,rhs) = tweak <$> mbSub
@@ -414,11 +459,14 @@ monoAlt (con,vs,rhs) = tweak <$> mbSub
    tweak :: TvSubst -> CoreAlt
    tweak tvSub = (con,vs',substExpr (text "monoAlt") idSub' rhs)
     where
+      -- TODO: Change from mapAccumL to foldMap, now that I'm not changing the pattern.
       (idSub',vs') = mapAccumL accum (tvSubstToSubst tvSub) vs
       accum :: Subst -> Var -> (Subst,Var)
-      accum idSub v = (extendSubst idSub v (Var v'), v')
+      accum idSub v = (extendSubst idSub v (Var v'), v)
        where
-         v' = setVarType v (Type.substTy tvSub (varType v))
+         v' = setVarName
+                (setVarType v (Type.substTy tvSub (varType v)))
+                (varName v)  -- change
    (coVars,filter isId -> ids) = partition isCoVar vs
    mbSub = uncurry (tcUnifyTys (const BindMe))
              (unzip (coVarKind <$> filter isCoVar vs))
@@ -429,83 +477,9 @@ tvSubstToSubst (TvSubst in_scope tenv) =
  where
    Subst _ emptyIdSubst _ _ = emptySubst  -- emptyIdSubst not exported from CoreSubst
 
--- Prune case expressions by dropping impossible alternatives and
--- type-specializing with information type equalities in coVars.
-pruneCaseR :: ReExpr
-pruneCaseR = caseT id id id (const (arr monoAlt))
-               (\ e w ty mbAlts -> Case e w ty (catMaybes mbAlts))
-
--- TODO: Move monoAlt and pruneCaseR to HERMIT.Extras, and remove ghc dep here.
-
-{-
-
-The core looks good to my eye, but Core Lint says otherwise:
-
-    ...
-    case ds2 of wild Int
-      L (~# :: N1 ~N Z) a0 -> a0
-      B n0 (~# :: N1 ~N S n0) ds3 ->
-        case ds3 of wild0 Int
-          (:#) u v ->
-            (+) Int $fNumInt (sumT n0 Int $fNumInt u) (sumT n0 Int $fNumInt v)
-    hermit<6> prune-case
-    case ds2 of wild Int
-      B n0 (~# :: N1 ~N S N0) ds3 ->
-        case ds3 of wild0 Int
-          (:#) u v ->
-            (+) Int $fNumInt (sumT N0 Int $fNumInt u) (sumT N0 Int $fNumInt v)
-    hermit<7> *** Core Lint errors : in result of Core plugin:  HERMIT0 ***
-    <no location info>: Warning:
-        In the pattern of a case alternative: (B n0_s8q2 :: *,
-                                                 dt_d7Un :: N1 ~# S N0,
-                                                 ds3_s8q3 :: Pair (Tree N0 Int))
-        Argument value doesn't match argument type:
-        Fun type:
-            N1 ~# S n0_s8q2 -> Pair (Tree n0_s8q2 Int) -> RTree N1 Int
-        Arg type: N1 ~# S N0
-        Arg: dt_d7Un
-    
-Hrmph. I changed the type of `dt_d7Un` in the pattern. I guess it would
-type-check if I also replaced `n0_s8q2` by `N0`, but Core `Alt` pattern
-arguments must be variables. Hm.
-
-Well, I can still remove impossible alternatives.
-
-Maybe I can do something useful with the unifying substitutions if I enhance
-them with *equality proofs* built on the coercion variables. For instance,
-starting with `dt :: S Z ~N S m`, we could form something like `Nth 0 dt :: Z ~N
-m` and then `Sym (Nth 0 dt) :: m ~N Z`.
 
 
--}
-
-#if 0
-
-getTvSubst :: Subst -> TvSubst
-getTvSubst (Subst in_scope _ tenv _) = TvSubst in_scope tenv
-
-type Alt b = (AltCon, [b], Expr b)
-
-data TvSubst
-  = TvSubst InScopeSet  -- The in-scope type and kind variables
-            TvSubstEnv  -- Substitutes both type and kind variables
-
-data Subst
-  = Subst InScopeSet  -- Variables in in scope (both Ids and TyVars) /after/
-                      -- applying the substitution
-          IdSubstEnv  -- Substitution for Ids
-          TvSubstEnv  -- Substitution from TyVars to Types
-          CvSubstEnv  -- Substitution from CoVars to Coercions
-
-substIdType :: Subst -> Id -> Id
-
-
-setVarType :: Id -> Type -> Id
-setVarType id ty = id { varType = ty }
-
-mapAccumL :: Traversable t => (a -> b -> (a, c)) -> a -> t b -> (a, t c)
-
-#endif
+-- TODO: Move pruneCaseR to HERMIT.Extras, and remove ghc dep here.
 
 {--------------------------------------------------------------------
     Plugin
@@ -528,7 +502,8 @@ externals =
     , externC' "cast-float-apps" castFloatApps
     , externC' "cast-float-case" castFloatCaseR
     , externC' "cast-float" castFloat
-    , externC' "unfold-poly" unfoldPoly
+    , externC' "unfold-poly" unfoldPolyR
+    , externC' "unfold-dict-cast" unfoldDictCastR
     , externC' "simplify" simplifyE  -- override HERMIT's simplify
     , externC' "simplify-was" HD.simplifyR
     , externC' "cast-float-let-rhs" castFloatLetRhsR
@@ -550,6 +525,7 @@ externals =
     , externC' "case-reduce-plus" caseReducePlusR
     , externC' "beta-reduce-plus-safer" betaReducePlusSafer
     , externC' "inline-head" inlineHeadR
+    , externC' "really-call-data-con" (reallyCallDataCon >> id)
     ]
 
 --     , externC' "standardize-con'" standardizeCon'
