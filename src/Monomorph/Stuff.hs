@@ -90,7 +90,7 @@ castFloatLetBodyR =
 --------------------------------------------------------------------}
 
 observing :: Observing
-observing = True
+observing = False
 
 -- #define LintDie
 
@@ -191,18 +191,6 @@ unfoldMethod = -- watchR "unfoldMethod" $
 unfoldDollar :: ReExpr
 unfoldDollar = watchR "unfoldDollar" $
                unfoldPredR (\ v _ -> isPrefixOf "$" (uqVarName v))
-
--- -- Prepare to eliminate non-standard constructor applications (fully saturated).
--- standardizeCon :: ReExpr
--- standardizeCon = watchR "standardizeCon" $
---                  go . rejectR isType
---  where
---    go   = (lamAllR id go . etaExpandR "eta") <+ doit
---    doit = appAllR id elimCon . (callDataConT >> abst'Repr)
---    elimCon = 
-
-
-   -- elimCon = appAllR unfoldMethod id
 
 -- Prepare to eliminate non-standard constructor applications (fully saturated).
 standardizeCon :: ReExpr
@@ -338,7 +326,7 @@ unfoldPolyR = watchR "unfoldPolyR" $
   do ty <- exprTypeT -- rejects Type t
      guardMsg (not (polyOrPredTy ty)) "Must not involve polymorphism or predicates"
      id -- watchR "unfold & simplify for unfoldPolyR"
-       (tryR simplifyE . (unfoldPredSafeR (okay ty) <+ unfoldDictCastR)) -- TODO: replace simplifyE
+       (tryR simplifyE . (unfoldDictCastR <+ unfoldPredSafeR (okay ty))) -- TODO: replace simplifyE
  where
    okay ty v args =  not (isPrimVar v && primTy)
                   && (isGlobalId v || if null args then isPolyTy vty else all okayArg args)
@@ -392,7 +380,8 @@ simplifyOneStepE = -- watchR "simplifyOneStepE" $
   <+ nowatchR "letElimR" letElimR
   -- added
   <+ nowatchR "castFloat" castFloat
-  <+ nowatchR "caseReduceUnfoldR" (caseReduceUnfoldR False) -- added
+--   <+ nowatchR "caseReduceUnfoldR" (caseReduceUnfoldR False)
+  <+ nowatchR "caseReducePlusR" caseReducePlusR
   <+ nowatchR "caseFloatCaseR" caseFloatCaseR
   <+ nowatchR "caseDefaultR" caseDefaultR
 
@@ -403,7 +392,7 @@ simplifyWithLetFloatingR =
   innermostR (promoteBindR recToNonrecR <+ promoteExprR rew)
  where
    rew =    simplifyOneStepE
-         <+ watchR "letFloatExprNoCastR" letFloatExprNoCastR
+         <+ nowatchR "letFloatExprNoCastR" letFloatExprNoCastR
 
 -- | Like 'letFloatExprNoCastR but without 'letFloatCastR'
 letFloatExprNoCastR :: ReExpr

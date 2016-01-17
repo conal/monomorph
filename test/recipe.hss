@@ -1,5 +1,7 @@
 any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly))
 
+-- any-td (repeat (simplify-one-step <+ prune-case <+ unfold-poly))
+
 -- We don't have to simplify. Could leave the rest to other passes.
 -- The time hit is considerable.
 

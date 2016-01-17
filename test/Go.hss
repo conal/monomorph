@@ -10,7 +10,7 @@ set-pp-coercion Kind
 
 --------
 
-rhs-of 'sumt1
+rhs-of 'nat2
 
 observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
 observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
