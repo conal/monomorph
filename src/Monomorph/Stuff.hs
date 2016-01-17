@@ -58,6 +58,9 @@ import HERMIT.Extras hiding (simplifyE)
     GHC and HERMIT utilities to be moved to HERMIT.Extras
 --------------------------------------------------------------------}
 
+lintCheckE :: ReExpr
+lintCheckE = watchR "lintCheckE" id
+
 onScrutineeR :: Unop ReExpr
 onScrutineeR r = caseAllR r id id (const id)
 
@@ -84,6 +87,8 @@ castFloatLetBodyR =
   do Let bind (Cast body co) <- id
      return $
        Cast (Let bind body) co
+
+-- TODO: What if variables from 'bind' occur freely in co?
 
 {--------------------------------------------------------------------
     Observing
@@ -117,7 +122,7 @@ nowatchR _ = id
 #endif
 
 {--------------------------------------------------------------------
-    Monomorphization
+    HasRep dictionary construction and abst/repr
 --------------------------------------------------------------------}
 
 repName :: String -> HermitName
@@ -174,6 +179,9 @@ abstRepr' :: ReExpr
 abstRepr' = -- watchR "abstRepr'" $
             do meth <- hasRepMethodT . exprTypeT
                meth "abst" . meth "repr'"
+{--------------------------------------------------------------------
+    Transformations
+--------------------------------------------------------------------}
 
 -- TODO: Refactor
 -- TODO: Rethink these three names
@@ -255,6 +263,7 @@ betaReducePlusSafer = betaReduceSafePlusR (arr okayToSubst)
 -- etaExpandR dies on Type t. Avoided via rejectR isType
 -- To do: check that standardizeCon accomplished its goal.
 
+#if 0
 unfoldNonPrim :: ReExpr
 unfoldNonPrim =
   unfoldNonPrim' <+ (castAllR unfoldNonPrim' id . castFloatApps)
@@ -272,14 +281,7 @@ unfoldNonPrim' = watchR "unfoldNonPrim" $
    simple (FunTy dom ran)       = simple dom && simple ran
    simple (ForAllTy _ ty)       = simple ty
    simple ty                    = not (isDictLikeTy ty)
-
-isPrim :: Id -> Bool
-isPrim v =
-     isDictLikeTy (rangeType (varType v))
-  || isPrimVar v
-  -- || ...
-
--- isPrim = isPrefixOf "$" . uqVarName
+#endif
 
 primNames :: S.Set String
 primNames = S.fromList
@@ -380,19 +382,17 @@ simplifyOneStepE = -- watchR "simplifyOneStepE" $
   <+ nowatchR "letElimR" letElimR
   -- added
   <+ nowatchR "castFloat" castFloat
---   <+ nowatchR "caseReduceUnfoldR" (caseReduceUnfoldR False)
   <+ nowatchR "caseReducePlusR" caseReducePlusR
   <+ nowatchR "caseFloatCaseR" caseFloatCaseR
   <+ nowatchR "caseDefaultR" caseDefaultR
-
 
 simplifyWithLetFloatingR :: ReLCore
 simplifyWithLetFloatingR =
   setFailMsg "Nothing to simplify." $
   innermostR (promoteBindR recToNonrecR <+ promoteExprR rew)
  where
-   rew =    simplifyOneStepE
-         <+ nowatchR "letFloatExprNoCastR" letFloatExprNoCastR
+   rew =  simplifyOneStepE
+       <+ nowatchR "letFloatExprNoCastR" letFloatExprNoCastR
 
 -- | Like 'letFloatExprNoCastR but without 'letFloatCastR'
 letFloatExprNoCastR :: ReExpr
@@ -413,9 +413,7 @@ caseDefaultR = prefixFailMsg "caseDefaultR failed: " $
 
 -- Examples go a little faster (< 3%) with the IAmDead test.
 
-lintCheckE :: ReExpr
-lintCheckE = watchR "lintCheckE" id
-
+#if 0
 {--------------------------------------------------------------------
     Attempts at case monomorphization/pruning.
 --------------------------------------------------------------------}
@@ -466,9 +464,8 @@ tvSubstToSubst (TvSubst in_scope tenv) =
  where
    Subst _ emptyIdSubst _ _ = emptySubst  -- emptyIdSubst not exported from CoreSubst
 
-
-
--- TODO: Move pruneCaseR to HERMIT.Extras, and remove ghc dep here.
+-- TODO: If I get it working, move pruneCaseR to HERMIT.Extras, and remove ghc dep here.
+#endif
 
 {--------------------------------------------------------------------
     Plugin
@@ -486,8 +483,6 @@ externals =
     , externC' "standardize-con" standardizeCon
     , externC' "unfold-method" unfoldMethod
     , externC' "unfold-dollar" unfoldDollar
-    , externC' "unfold-nonprim'" unfoldNonPrim' -- to eliminate
-    , externC' "unfold-nonprim" unfoldNonPrim
     , externC' "cast-float-apps" castFloatApps
     , externC' "cast-float-case" castFloatCaseR
     , externC' "cast-float" castFloat
@@ -501,7 +496,6 @@ externals =
     , externC' "optimize-cast" optimizeCastR
     , externC' "case-default" caseDefaultR
     , externC' "unfold-safe" unfoldSafeR
-    , externC' "prune-case" pruneCaseR
     , externC' "cse-prog" cseProg
     , externC' "cse-guts" cseGuts
     , externC' "cse-expr" cseExpr
@@ -517,20 +511,21 @@ externals =
     , externC' "really-call-data-con" (reallyCallDataCon >> id)
     ]
 
---     , externC' "standardize-con'" standardizeCon'
---     , externC' "beta-reduce-safe" betaReduceSafeR
-
---     , externC' "inline-worker" inlineWorkerR
---     , externC' "unfold-worker" unfoldWorkerR
-
---     , externC' "bash-it" bashIt
---     , externC' "bash-all" bashAll
-
---     , externC' "cse-guts" cseGuts
---     , externC' "cse-prog" cseProg
---     , externC' "cse-bind" cseBind
---     , externC' "cse-expr" cseExpr
-
---     , externC' "is-dictish" isDictish
---     , externC' "is-dict-like" isDictLike
---     , externC' "inline-global" inlineGlobal
+#if 0
+    , externC' "prune-case" pruneCaseR
+    , externC' "standardize-con'" standardizeCon'
+    , externC' "beta-reduce-safe" betaReduceSafeR
+    , externC' "inline-worker" inlineWorkerR
+    , externC' "unfold-worker" unfoldWorkerR
+    , externC' "bash-it" bashIt
+    , externC' "bash-all" bashAll
+    , externC' "cse-guts" cseGuts
+    , externC' "cse-prog" cseProg
+    , externC' "cse-bind" cseBind
+    , externC' "cse-expr" cseExpr
+    , externC' "is-dictish" isDictish
+    , externC' "is-dict-like" isDictLike
+    , externC' "inline-global" inlineGlobal
+    , externC' "unfold-nonprim'" unfoldNonPrim' -- to eliminate
+    , externC' "unfold-nonprim" unfoldNonPrim
+#endif
