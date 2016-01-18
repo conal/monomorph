@@ -521,9 +521,10 @@ externals =
     , externC' "optimize-cast" optimizeCastR
     , externC' "case-default" caseDefaultR
     , externC' "unfold-safe" unfoldSafeR
-    , externC' "cse-prog" cseProg
-    , externC' "cse-guts" cseGuts
-    , externC' "cse-expr" cseExpr
+    , externC' "cse-guts" cseGutsR
+    , externC' "cse-prog" cseProgR
+    , externC' "cse-bind" cseBindR
+    , externC' "cse-expr" cseExprR
     , externC' "let-float-expr" letFloatExprR
     , externC' "let-nonrec-subst-safer" letNonRecSubstSaferR
     , externC' "simplify-one-step" simplifyOneStepE
@@ -548,10 +549,6 @@ externals =
     , externC' "unfold-worker" unfoldWorkerR
     , externC' "bash-it" bashIt
     , externC' "bash-all" bashAll
-    , externC' "cse-guts" cseGuts
-    , externC' "cse-prog" cseProg
-    , externC' "cse-bind" cseBind
-    , externC' "cse-expr" cseExpr
     , externC' "is-dictish" isDictish
     , externC' "is-dict-like" isDictLike
     , externC' "inline-global" inlineGlobal
