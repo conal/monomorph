@@ -373,7 +373,7 @@ simplifyR =
   innermostR (promoteBindR recToNonrecR <+ promoteExprR simplifyOneStepE)
 
 simplifyOneStepE :: ReExpr
-simplifyOneStepE = watchR "simplifyOneStepE" $
+simplifyOneStepE = -- watchR "simplifyOneStepE" $
      nowatchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
   <+ nowatchR "betaReduceR" betaReduceR
   <+ nowatchR "letElimR" letElimR

@@ -45,7 +45,7 @@ plugin = hermitPlugin (pass 0 . const plug)
    rew :: RewriteH Core
    rew = tryR (promoteR monoGutsR)
          -- {- promoteR observeProgR . -} tryR monomorphizeR {- . promoteR observeProgR -}
-    -- . tryR (anybuR (promoteR detickE)) -- for ghci break points
+       . tryR (anybuR (promoteR detickE)) -- for ghci break points
 
 -- The modGutsR just lets tracing show the program defs instead of the module header.
 
