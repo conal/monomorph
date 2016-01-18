@@ -23,11 +23,15 @@ Library
   Build-Depends:       base<5
                      , ghc >= 7.10.3
                      , containers
+                     , data-default-class >= 0.0.1
+                     , kure
                      , hermit >= 1.0.0.1
                      , hermit-extras >= 0.4.0
                      , circat
 -- try removing ghc dep later
   Exposed-Modules:
-                       Monomorph.Stuff     
+                       Monomorph.Stuff
+                       Monomorph.Interactive
+                       Monomorph.Plugin
                        
   ghc-options:         -Wall

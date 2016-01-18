@@ -14,12 +14,12 @@
 -- Maintainer  :  conal@conal.net
 -- Stability   :  experimental
 -- 
--- Working up to a monomorphization GHC plugin.
+-- Monomorphizing GHC Core
 ----------------------------------------------------------------------
 
-module Monomorph.Stuff (plugin) where
-
--- TODO: explicit exports
+module Monomorph.Stuff
+  (externals,monomorphizeR,monoGutsR,detickE,observeProgR,simplifyR
+  ) where
 
 import Prelude hiding (id,(.))
 
@@ -37,12 +37,12 @@ import Data.Maybe (catMaybes,isJust)
 import qualified Type  -- from GHC
 #endif
 
+import HERMIT.Core (CoreProg(..))
 import HERMIT.Dictionary hiding (externals,simplifyR)
 import qualified HERMIT.Dictionary as HD
 import HERMIT.External (External)
 import HERMIT.GHC
-import HERMIT.Kure hiding ((<$>),(<*>))
-import HERMIT.Plugin (hermitPlugin,pass,interactive)
+import HERMIT.Kure
 import HERMIT.Name (HermitName)
 
 import HERMIT.Extras hiding (simplifyE)
@@ -86,6 +86,17 @@ castFloatLetBodyR =
        Cast (Let bind body) co
 
 -- TODO: What if variables from 'bind' occur freely in co?
+
+-- Declutter diagnostic output in GHCi
+
+detickE :: ReExpr
+detickE = tickT id id (const id)
+
+progBindsR :: ReBind -> ReProg
+progBindsR b = go
+ where
+   go = progNilR <+ progConsAllR b go
+   progNilR = progNilT ProgNil
 
 {--------------------------------------------------------------------
     Observing
@@ -181,9 +192,10 @@ abstRepr' = -- watchR "abstRepr'" $
 -- Do one unfolding, and then a second one only if the inlining result is a
 -- worker, as in the case of a method lifted to the top level.
 unfoldMethod :: ReExpr
-unfoldMethod = -- watchR "unfoldMethod" $
+unfoldMethod = watchR "unfoldMethod" $
     tryR unfoldDollar  -- revisit
-  . tryR (watchR "unfoldMethod simplify" simplifyE)
+  . {- watchR "unfoldMethod simplify" -} simplifyE
+  -- . observeR "unfoldMethod - post unfold"
   . unfoldR
 
 -- TODO: Do I still need unfoldMethod, or can I use unfoldPolyR instead?
@@ -221,7 +233,8 @@ standardizeCase = watchR "standardizeCase" $
 
 -- More ambitious caseReduceR.
 caseReducePlusR :: ReExpr
-caseReducePlusR = go . acceptWithFailMsgR isCase "Not a case"
+caseReducePlusR = setFailMsg "caseReducePlusR failed."
+                  go . acceptWithFailMsgR isCase "Not a case"
  where
    go =  caseReduceR False
       <+ (letAllR id go . letFloatCaseR)
@@ -286,8 +299,8 @@ isPrimVar :: Var -> Bool
 isPrimVar v = fqVarName v `S.member` primNames
 
 -- | Various single-step cast-floating rewrite
-castFloat :: ReExpr
-castFloat =
+castFloatR :: ReExpr
+castFloatR =
      {- watchR "castFloatAppR"     -} castFloatAppR
   <+ {- watchR "castFloatLamR"     -} castFloatLamR
   <+ {- watchR "castFloatCaseR"    -} castFloatCaseR
@@ -360,13 +373,13 @@ simplifyR =
   innermostR (promoteBindR recToNonrecR <+ promoteExprR simplifyOneStepE)
 
 simplifyOneStepE :: ReExpr
-simplifyOneStepE = -- watchR "simplifyOneStepE" $
+simplifyOneStepE = watchR "simplifyOneStepE" $
      nowatchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
   <+ nowatchR "betaReduceR" betaReduceR
   <+ nowatchR "letElimR" letElimR
   <+ nowatchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
   <+ nowatchR "caseReduceR" (caseReduceR False)
-  <+ nowatchR "castFloat" castFloat
+  <+ nowatchR "castFloatR" castFloatR
   <+ nowatchR "caseReducePlusR" caseReducePlusR
   <+ nowatchR "caseFloatCaseR" caseFloatCaseR
   <+ nowatchR "caseDefaultR" caseDefaultR
@@ -397,6 +410,35 @@ caseDefaultR = prefixFailMsg "caseDefaultR failed: " $
        _       -> return (Let (NonRec wild scrut) body)
 
 -- Examples go a little faster (< 3%) with the IAmDead test.
+
+-- | Monomorphize.
+monomorphizeR :: ReCore
+monomorphizeR = anytdR (promoteR monomorphizeE)
+
+monomorphizeE :: ReExpr
+monomorphizeE = repeatR (simplifyOneStepE <+ standardizeCase <+ standardizeCon <+ unfoldPolyR)
+
+-- any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly))
+
+monoProgR :: ReProg
+monoProgR = -- bracketR "monoProgR" $
+            progBindsR (observeFailureR "Monomorphization failure" $
+                        observeR "monoBindR" .
+                        nonRecAllR id (tryR simplifyE . anytdE monomorphizeE))
+
+-- TODO: Consider recursive as well. Maybe unnecessary, since I don't expect to
+-- handle monomorphic recursive definitions (where monomorphizing won't cut recursion).
+
+monoGutsR :: ReGuts
+monoGutsR = modGutsR monoProgR
+
+-- monoCoreR :: Injection ModGuts a => RewriteH a
+-- monoCoreR = promoteR monoGutsR
+
+observeProgR :: ReGuts
+observeProgR = traceR "finish!"
+               . modGutsR (observeR "program")
+               . traceR "start!"
 
 #ifdef MonoCase
 {--------------------------------------------------------------------
@@ -453,11 +495,8 @@ tvSubstToSubst (TvSubst in_scope tenv) =
 #endif
 
 {--------------------------------------------------------------------
-    Plugin
+    Externals for interactive use
 --------------------------------------------------------------------}
-
-plugin :: Plugin
-plugin = hermitPlugin (pass 0 . interactive externals)
 
 externals :: [External]
 externals =
@@ -470,11 +509,12 @@ externals =
     , externC' "unfold-dollar" unfoldDollar
     , externC' "cast-float-apps" castFloatApps
     , externC' "cast-float-case" castFloatCaseR
-    , externC' "cast-float" castFloat
+    , externC' "cast-float" castFloatR
     , externC' "unfold-poly" unfoldPolyR
     , externC' "unfold-dict-cast" unfoldDictCastR
-    , externC' "simplify" simplifyE  -- override HERMIT's simplify
     , externC' "simplify-was" HD.simplifyR
+    , externC' "simplify" simplifyR  -- override HERMIT's simplify
+    , externC' "simplify-with-let-floating" simplifyWithLetFloatingR
     , externC' "cast-float-let-rhs" castFloatLetRhsR
     , externC' "cast-float-let-body" castFloatLetBodyR
     , externC' "cast-cast" castCastR
@@ -487,13 +527,17 @@ externals =
     , externC' "let-float-expr" letFloatExprR
     , externC' "let-nonrec-subst-safer" letNonRecSubstSaferR
     , externC' "simplify-one-step" simplifyOneStepE
-    , externC' "simplify-with-let-floating" simplifyWithLetFloatingR
     , externC' "lint-check" lintCheckE
     , externC' "let-float-expr-no-cast" letFloatExprNoCastR
     , externC' "case-reduce-plus" caseReducePlusR
     , externC' "beta-reduce-plus-safer" betaReducePlusSafer
     , externC' "inline-head" inlineHeadR
     , externC' "really-call-data-con" (reallyCallDataCon >> id)
+
+    , externC' "monomorphize" monomorphizeR
+    , externC' "mono-guts" monoGutsR
+    , externC' "detick" detickE
+    , externC' "observe-prog" observeProgR
     ]
 
 #if 0

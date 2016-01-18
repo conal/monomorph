@@ -1,9 +1,15 @@
-HERM = hermit Examples.hs -v0 -opt=Monomorph.Stuff
+HERM = hermit Examples.hs -v0 -opt=Monomorph.Interactive
 
 default: go
 
 herm:
 	$(HERM) settings.hss
+
+# Full-module
+full:
+	$(HERM) settings.hss recipe.hss
+# 	cat settings.hss recipe.hss > out/script.hss
+# 	$(HERM) out/script.hss
 
 %.cont:
 	(cat settings.hss ; echo "rhs-of '$*" ; cat recipe.hss) > out/script.hss

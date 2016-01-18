@@ -1,3 +1,6 @@
+-- {-# OPTIONS_GHC -fplugin=Monomorph.Plugin -dcore-lint -fsimple-list-literals -fexpose-all-unfoldings #-}
+-- {-# OPTIONS_GHC -O2 -dcore-lint -fsimple-list-literals -fexpose-all-unfoldings -fplugin=Monomorph.Interactive #-}
+
 {-# LANGUAGE CPP, TupleSections, GADTs, TypeOperators, Rank2Types #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -14,13 +17,7 @@
 -- Maintainer  :  conal@conal.net
 -- Stability   :  experimental
 -- 
--- Examples / tinkering. To run:
--- 
---   hermit TreeTest.hs -v0 -opt=Monomorph.Stuff Go.hss && ./Examples
---   
--- Alternatively, use a target in the Makefile, e.g., go (default).
--- 
--- Add 'resume' after Go.hss if you don't want to see the intermediate Core.
+-- Examples / tinkering.
 ----------------------------------------------------------------------
 
 module Examples where
@@ -39,7 +36,7 @@ import Circat.RTree
 type Unop a = a -> a
 type Binop a = a -> Unop a
 
-#if 0
+#if 1
 t0 :: RTree N0 Int
 t0 = L 5
 
@@ -55,6 +52,9 @@ s1 = sumT
 #endif
 
 #if 0
+reprp :: Pair Int -> Rep (Pair Int)
+reprp = repr
+
 sump :: Pair Int -> Int
 sump = sum
 
@@ -118,10 +118,6 @@ nat1 = nat :: Nat N1
 nat2 = nat :: Nat N2
 nat4 = nat :: Nat N4
 nat8 = nat :: Nat N8
-#else
-nat0 = Zero
-nat1 = Succ nat0
-nat2 = Succ nat1
 #endif
 
 #if 0

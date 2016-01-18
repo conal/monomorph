@@ -8,10 +8,13 @@
 
 
 *   Look for faster implementation of `simplifyWithLetFloatingR`.
-*   Try simplifying the signatures of `abst'` and `repr'` (and maybe `abst`and `repr`) to hide the `Eq#`.
 *   Figure out how `unfoldPoly` sometimes captures value arguments, and fix it.
 *   Detect external polymorphism and fail with a message.
 
 
+Done:
 
+*   Try simplifying the signatures of `abst'` and `repr'` (and maybe `abst`and `repr`) to hide the `Eq#`.
+    I re-disovered that this simpler type leads to more casts remaining in programs.
+    I abandoned the changed `Circat.Rep` in a new circat branch called "simpler-method-signatures".
 

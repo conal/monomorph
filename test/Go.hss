@@ -10,13 +10,17 @@ set-pp-coercion Kind
 
 --------
 
-rhs-of 'nat2
+rhs-of 'sumt0
 
 observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
 observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
 observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
 observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
-observe "--------------------------------" ; one-td (repeat simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly)
+
+[cast-expr,lam-body]
+
+case-expr
+abst-repr'
 
 -- any-td (repeat (standardize-case <+ standardize-con <+ unfold-poly <+ inline-global))
 -- try simplify-with-let-floating

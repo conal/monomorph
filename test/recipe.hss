@@ -1,6 +1,9 @@
-any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly))
+monomorphize
+-- mono-guts
 
--- any-td (repeat (simplify-one-step <+ prune-case <+ unfold-poly))
+-- any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly))
+
+try unshadow
 
 -- We don't have to simplify. Could leave the rest to other passes.
 -- The time hit is considerable.
@@ -12,8 +15,5 @@ any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfo
 
 -- try simplify-with-let-floating
 
-try unshadow
-
 -- trace "-----------------"
 
--- top
