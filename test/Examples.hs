@@ -1,5 +1,5 @@
--- {-# OPTIONS_GHC -fplugin=Monomorph.Plugin -dcore-lint -fsimple-list-literals -fexpose-all-unfoldings #-}
--- {-# OPTIONS_GHC -O2 -dcore-lint -fsimple-list-literals -fexpose-all-unfoldings -fplugin=Monomorph.Interactive #-}
+-- {-# OPTIONS_GHC -dcore-lint -fobject-code -fplugin=Monomorph.Interactive #-}
+{-# OPTIONS_GHC -dcore-lint -fobject-code -fno-code -fplugin=Monomorph.Plugin #-}
 
 {-# LANGUAGE CPP, TupleSections, GADTs, TypeOperators, Rank2Types #-}
 {-# OPTIONS_GHC -Wall #-}
@@ -35,6 +35,12 @@ import Circat.RTree
 
 type Unop a = a -> a
 type Binop a = a -> Unop a
+
+-- q :: Int -> RTree N3 Int
+-- q = pure
+
+-- q :: RTree N0 Int
+-- q = L 5
 
 #if 1
 t0 :: RTree N0 Int
