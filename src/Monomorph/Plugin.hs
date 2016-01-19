@@ -1,7 +1,7 @@
 -- {-# LANGUAGE #-}
 {-# OPTIONS_GHC -Wall #-}
 
-{-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
+-- {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
 -- {-# OPTIONS_GHC -fno-warn-unused-binds   #-} -- TEMP
 
 ----------------------------------------------------------------------
@@ -26,39 +26,25 @@ import Control.Category ((.))
 import Data.Default.Class
 
 import GhcPlugins (Plugin)
-import Language.KURE (tryR,anybuR,promoteR)
+import Language.KURE (tryR)
 import HERMIT.Kernel (CommitMsg(..))
-import HERMIT.Kure (RewriteH,Core)
-import HERMIT.GHC (ModGuts)
 import HERMIT.Plugin
 import HERMIT.Plugin.Renderer (changeRenderer)
+import HERMIT.Plugin.Types (PluginM)
 import HERMIT.PrettyPrinter.Common
-import HERMIT.Extras (ReGuts)
 import Monomorph.Stuff
 
 plugin :: Plugin
 plugin = hermitPlugin (pass 0 . const plug)
  where
-   plug = do changeRenderer "ascii"
-             setPrettyOptions (tweakPretty def)
-             apply (Always "monomorphize") rew
-   rew :: RewriteH Core
-   rew = tryR (promoteR monoGutsR)
-         -- {- promoteR observeProgR . -} tryR monomorphizeR {- . promoteR observeProgR -}
-       . tryR (anybuR (promoteR detickE)) -- for ghci break points
+   plug = tweakPretty >> apply (Always "monomorphize") (tryR monomorphizeR)
 
--- The modGutsR just lets tracing show the program defs instead of the module header.
-
-tweakPretty :: PrettyOptions -> PrettyOptions
-tweakPretty = updateCoShowOption   Omit -- Kind
-            . updateTypeShowOption Omit -- Show
-            -- . updateWidthOption 80 -- default
-              
 -- What's the CommitMsg about?
 
--- Oh! I just noticed setPrettyOptions in HERMIT.Plugin. Never mind.
-
-
--- foo opt st = setPrettyOpts st (updateTypeShowOption opt (cl_pretty_opts st))
-
--- tweakPrettyOpts = modify (flip setPrettyOpts 
+tweakPretty :: PluginM ()
+tweakPretty = do changeRenderer "ascii"
+                 setPrettyOptions (tweak def)
+  where
+   tweak = updateCoShowOption   Omit -- Kind
+         . updateTypeShowOption Omit -- Show
+      -- . updateWidthOption 80 -- default

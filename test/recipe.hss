@@ -1,5 +1,4 @@
 monomorphize
--- mono-guts
 
 -- any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly))
 

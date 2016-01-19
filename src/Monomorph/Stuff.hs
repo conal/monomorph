@@ -17,9 +17,9 @@
 -- Monomorphizing GHC Core
 ----------------------------------------------------------------------
 
-module Monomorph.Stuff
-  (externals,monomorphizeR,monoGutsR,detickE,observeProgR,simplifyR
-  ) where
+module Monomorph.Stuff (externals,monomorphizeR) where
+
+-- TODO: Trim exports
 
 import Prelude hiding (id,(.))
 
@@ -37,7 +37,6 @@ import Data.Maybe (catMaybes,isJust)
 import qualified Type  -- from GHC
 #endif
 
-import HERMIT.Core (CoreProg(..))
 import HERMIT.Dictionary hiding (externals,simplifyR)
 import qualified HERMIT.Dictionary as HD
 import HERMIT.External (External)
@@ -92,18 +91,12 @@ castFloatLetBodyR =
 detickE :: ReExpr
 detickE = tickT id id (const id)
 
-progBindsR :: ReBind -> ReProg
-progBindsR b = go
- where
-   go = progNilR <+ progConsAllR b go
-   progNilR = progNilT ProgNil
-
 {--------------------------------------------------------------------
     Observing
 --------------------------------------------------------------------}
 
 observing :: Observing
-observing = False
+observing = False -- True
 
 -- #define LintDie
 
@@ -153,10 +146,9 @@ hasRepMethodF =
 -- Would it be faster to also simplify/bash the dictionary so that we share that
 -- much for multi-use? See notes for 2015-01-14.
 
--- Given that I'm pulling two methods out of a dictionary, maybe I can avoid
--- building the dictionary twice. Perhaps a function that returns (abst,repr')
--- and another that returns (abst',repr), with only one dictionary required to
--- construct both pairs.
+-- TODO: Given that I'm pulling two methods out of a dictionary, maybe I can avoid
+-- building the dictionary twice. Perhaps a function that returns (abst,repr),
+-- with only one dictionary required to construct both pairs.
 
 hasRepMethodT :: TransformH Type (String -> ReExpr)
 hasRepMethodT = (\ f -> \ s -> App <$> f s <*> id) <$> hasRepMethodF
@@ -171,17 +163,6 @@ abstRepr = -- watchR "abstRepr" $
            do meth <- hasRepMethodT . exprTypeT
               meth "abst" . meth "repr"
 
--- | e ==> abst' (repr e).
-abst'Repr :: ReExpr
-abst'Repr = -- watchR "abst'Repr" $
-            do meth <- hasRepMethodT . exprTypeT
-               meth "abst'" . meth "repr"
-
--- | e ==> abst (repr' e).
-abstRepr' :: ReExpr
-abstRepr' = -- watchR "abstRepr'" $
-            do meth <- hasRepMethodT . exprTypeT
-               meth "abst" . meth "repr'"
 {--------------------------------------------------------------------
     Transformations
 --------------------------------------------------------------------}
@@ -196,7 +177,7 @@ unfoldMethod = watchR "unfoldMethod" $
     tryR unfoldDollar  -- revisit
   . {- watchR "unfoldMethod simplify" -} simplifyE
   -- . observeR "unfoldMethod - post unfold"
-  . unfoldR
+  . unfoldSafeR
 
 -- TODO: Do I still need unfoldMethod, or can I use unfoldPolyR instead?
 
@@ -210,8 +191,7 @@ standardizeCon = watchR "standardizeCon" $
                  go . rejectR isType
  where
    go   = (lamAllR id go . etaExpandR "eta") <+ doit
-   doit = appAllR id (appAllR unfoldMethod id)
-        . (reallyCallDataCon >> abst'Repr)
+   doit = (reallyCallDataCon >> simplifyE . appAllR id inlineHeadR . abstRepr)
 
 -- *Really* a datacon call. Some casts satisfy callDataConT, perhaps due to the
 -- representation of single-method dictionaries via a cast.
@@ -226,7 +206,7 @@ reallyCallDataCon =
 -- Simplified version, leaving more work for another pass.
 standardizeCase :: ReExpr
 standardizeCase = watchR "standardizeCase" $
-  caseReducePlusR . onScrutineeR abstRepr'
+  caseReducePlusR . onScrutineeR (inlineHeadR . abstRepr)
 
 -- TODO: For efficiency, try to narrow the scope of this simplifyE, and/or
 -- replace with a more specific strategy.
@@ -251,12 +231,21 @@ isCase _         = False
 -- | Like 'unfoldR', but without work duplication
 unfoldSafeR :: ReExpr
 unfoldSafeR = prefixFailMsg "unfoldSafeR failed: " $
+  callPredT (\ v _ -> not (isRepMeth v)) >>
   tryR betaReducePlusSafer . inlineHeadR
 
 inlineHeadR :: ReExpr
 inlineHeadR = {- watchR "inlineHeadR" -} go
  where
    go = appAllR go idR <+ inlineR
+                          -- inlineMatchingPredR (not . isRepMeth)
+
+isRepMeth :: Id -> Bool
+isRepMeth = (`elem` ["Circat.Rep.abst","Circat.Rep.repr"]) . fqVarName
+
+-- inlineHeadR = {- watchR "inlineHeadR" -} go
+--  where
+--    go = appAllR go idR <+ inlineR
 
 unfoldPredSafeR :: (Id -> [CoreExpr] -> Bool) -> ReExpr
 unfoldPredSafeR p = callPredT p >> unfoldSafeR
@@ -372,10 +361,15 @@ simplifyR =
   setFailMsg "Simplify failed: nothing to simplify." $
   innermostR (promoteBindR recToNonrecR <+ promoteExprR simplifyOneStepE)
 
+simplifyPlusE :: ReExpr
+simplifyPlusE = watchR "simplifyPlusE" $
+                repeatR simplifyOneStepE
+
 simplifyOneStepE :: ReExpr
 simplifyOneStepE = -- watchR "simplifyOneStepE" $
      nowatchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
-  <+ nowatchR "betaReduceR" betaReduceR
+  -- <+ nowatchR "betaReducePlusSafer" betaReducePlusSafer
+  <+ nowatchR "betaReduceR" betaReduceR  -- or betaReducePlusSafer?
   <+ nowatchR "letElimR" letElimR
   <+ nowatchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
   <+ nowatchR "caseReduceR" (caseReduceR False)
@@ -411,26 +405,46 @@ caseDefaultR = prefixFailMsg "caseDefaultR failed: " $
 
 -- Examples go a little faster (< 3%) with the IAmDead test.
 
+-- Prepare for monomorphization (by monoGutsR or monomorphizeR)
+preMonoR :: ReCore
+preMonoR = promoteR cseGutsR  -- frequently finds common dictionaries. always succeeds
+           . tryR (innermostR letFloatR) -- dicts etc
+ where
+   letFloatR = promoteR letFloatExprR <+ promoteR letFloatTopR
+
 -- | Monomorphize.
 monomorphizeR :: ReCore
-monomorphizeR = anytdR (promoteR monomorphizeE)
+monomorphizeR =
+#if 0
+  anytdR (promoteR monomorphizeE)
+#else
+  promoteR monoGutsR
+#endif
+  . tryR preMonoR
 
 monomorphizeE :: ReExpr
-monomorphizeE = repeatR (simplifyOneStepE <+ standardizeCase <+ standardizeCon <+ unfoldPolyR)
+monomorphizeE = repeatR (simplifyPlusE <+ standardizeCase <+ standardizeCon <+ unfoldPolyR)
 
 -- any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly))
 
 monoProgR :: ReProg
 monoProgR = -- bracketR "monoProgR" $
-            progBindsR (observeFailureR "Monomorphization failure" $
-                        observeR "monoBindR" .
-                        nonRecAllR id (tryR simplifyE . anytdE monomorphizeE))
+  progBindsAnyR (const $
+                 -- observeFailureR "Monomorphization failure" $
+                 observeR "monoBindR" .
+                 nonRecAllR id (tryR simplifyE
+                                . anytdE monomorphizeE
+                                . tryR (anybuE detickE))) -- for ghci break points
+
+-- TODO: use progBindsAnyR, remove the tryR, and add a tryR elsewhere.
+
 
 -- TODO: Consider recursive as well. Maybe unnecessary, since I don't expect to
 -- handle monomorphic recursive definitions (where monomorphizing won't cut recursion).
 
 monoGutsR :: ReGuts
 monoGutsR = modGutsR monoProgR
+
 
 -- monoCoreR :: Injection ModGuts a => RewriteH a
 -- monoCoreR = promoteR monoGutsR
@@ -501,8 +515,6 @@ tvSubstToSubst (TvSubst in_scope tenv) =
 externals :: [External]
 externals =
     [ externC' "abst-repr" abstRepr
-    , externC' "abst'-repr" abst'Repr
-    , externC' "abst-repr'" abstRepr'
     , externC' "standardize-case" standardizeCase
     , externC' "standardize-con" standardizeCon
     , externC' "unfold-method" unfoldMethod
@@ -528,6 +540,7 @@ externals =
     , externC' "let-float-expr" letFloatExprR
     , externC' "let-nonrec-subst-safer" letNonRecSubstSaferR
     , externC' "simplify-one-step" simplifyOneStepE
+    , externC' "simplify-plus" simplifyPlusE
     , externC' "lint-check" lintCheckE
     , externC' "let-float-expr-no-cast" letFloatExprNoCastR
     , externC' "case-reduce-plus" caseReducePlusR

@@ -1,4 +1,5 @@
-HERM = hermit Examples.hs -v0 -opt=Monomorph.Interactive
+PLUGIN = Monomorph.Interactive
+HERM = hermit Examples.hs -v0 -opt=$(PLUGIN)
 
 default: go
 
@@ -8,14 +9,15 @@ herm:
 # Full-module
 full:
 	$(HERM) settings.hss recipe.hss
-# 	cat settings.hss recipe.hss > out/script.hss
-# 	$(HERM) out/script.hss
 
-%.cont:
+out:
+	mkdir out
+
+%.cont: out
 	(cat settings.hss ; echo "rhs-of '$*" ; cat recipe.hss) > out/script.hss
 	$(HERM) out/script.hss
 
-%.raw:
+%.raw: out
 	(cat settings.hss ; echo "rhs-of '$*") > out/script.hss
 	$(HERM) out/script.hss
 
@@ -35,11 +37,11 @@ compile:
 
 compile-circat:
 	cd ~/Tabula/Haskell/circat ; make
+	make compile
 
 compile-extras:
 	cd ~/Tabula/Haskell/hermit-extras ; make
-
-compile-all: compile-circat compile-extras compile-mono
+	make compile
 
 ## Testing
 

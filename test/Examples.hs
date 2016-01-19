@@ -1,5 +1,14 @@
--- {-# OPTIONS_GHC -dcore-lint -fobject-code -fplugin=Monomorph.Interactive #-}
-{-# OPTIONS_GHC -dcore-lint -fobject-code -fno-code -fplugin=Monomorph.Plugin #-}
+{-# OPTIONS_GHC -fplugin=Monomorph.Plugin -O -fobject-code -dcore-lint #-}
+
+-- {-# OPTIONS_GHC -fplugin=Monomorph.Interactive -O -fobject-code -dcore-lint #-}
+
+-- The "-O" and "-fobject-code" flags are essential for unfolding, while
+-- -dcore-lint is for debugging and may be removed later.
+
+-- It was tricky to find these settings, because first version used in a ghci
+-- session sticks. Strange, since [the GHC
+-- guide](https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/flag-reference.html)
+-- say that "-O" and "-fobject-code" are both dynamic.
 
 {-# LANGUAGE CPP, TupleSections, GADTs, TypeOperators, Rank2Types #-}
 {-# OPTIONS_GHC -Wall #-}
@@ -29,22 +38,21 @@ import Control.Applicative (liftA2)
 
 import TypeUnary.Vec
 
+import Circat.Misc (Unop,Binop)
 import Circat.Rep
 import Circat.Pair
 import Circat.RTree
 
-type Unop a = a -> a
-type Binop a = a -> Unop a
+-- fish :: Num a => a
+-- fish = 3
 
--- q :: Int -> RTree N3 Int
--- q = pure
-
--- q :: RTree N0 Int
--- q = L 5
+-- sumt4 = sum  :: Tree  N4 Int -> Int
+-- mapt4 = fmap :: Unop Int -> Unop (Tree N4 Int)
 
 #if 1
-t0 :: RTree N0 Int
-t0 = L 5
+
+-- t0 :: RTree N0 Int
+-- t0 = L 5
 
 t1 :: RTree N1 Int
 t1 = B (L 3 :# L 4)
@@ -64,23 +72,23 @@ reprp = repr
 sump :: Pair Int -> Int
 sump = sum
 
-sumv0  = sum :: Vec N0 Int -> Int
-sumv1  = sum :: Vec N1 Int -> Int
-sumv2  = sum :: Vec N2 Int -> Int
-sumv3  = sum :: Vec N3 Int -> Int
-sumv4  = sum :: Vec N4 Int -> Int
-sumv8  = sum :: Vec N8 Int -> Int
+sumv0  = sum :: Vec  N0 Int -> Int
+sumv1  = sum :: Vec  N1 Int -> Int
+sumv2  = sum :: Vec  N2 Int -> Int
+sumv3  = sum :: Vec  N3 Int -> Int
+sumv4  = sum :: Vec  N4 Int -> Int
+sumv8  = sum :: Vec  N8 Int -> Int
 sumv16 = sum :: Vec N16 Int -> Int
 
-sumt0  = sum :: Tree N0 Int -> Int
-sumt1  = sum :: Tree N1 Int -> Int
-sumt2  = sum :: Tree N2 Int -> Int
-sumt3  = sum :: Tree N3 Int -> Int
-sumt4  = sum :: Tree N4 Int -> Int
-sumt5  = sum :: Tree N5 Int -> Int
-sumt6  = sum :: Tree N6 Int -> Int
-sumt7  = sum :: Tree N7 Int -> Int
-sumt8  = sum :: Tree N8 Int -> Int
+sumt0  = sum :: Tree  N0 Int -> Int
+sumt1  = sum :: Tree  N1 Int -> Int
+sumt2  = sum :: Tree  N2 Int -> Int
+sumt3  = sum :: Tree  N3 Int -> Int
+sumt4  = sum :: Tree  N4 Int -> Int
+sumt5  = sum :: Tree  N5 Int -> Int
+sumt6  = sum :: Tree  N6 Int -> Int
+sumt7  = sum :: Tree  N7 Int -> Int
+sumt8  = sum :: Tree  N8 Int -> Int
 sumt16 = sum :: Tree N16 Int -> Int
 #endif
 
@@ -99,22 +107,22 @@ sumt256 = sum :: Tree N256 Int -> Int
 #if 0
 type MV n = Unop Int -> Unop (Vec n Int)
 
-mapv0  = fmap :: MV N0
-mapv1  = fmap :: MV N1
-mapv2  = fmap :: MV N2
-mapv3  = fmap :: MV N3
-mapv4  = fmap :: MV N4
-mapv8  = fmap :: MV N8
+mapv0  = fmap :: MV  N0
+mapv1  = fmap :: MV  N1
+mapv2  = fmap :: MV  N2
+mapv3  = fmap :: MV  N3
+mapv4  = fmap :: MV  N4
+mapv8  = fmap :: MV  N8
 mapv16 = fmap :: MV N16
 
 type MT n = Unop Int -> Unop (RTree n Int)
 
-mapt0  = fmap :: MT N0
-mapt1  = fmap :: MT N1
-mapt2  = fmap :: MT N2
-mapt3  = fmap :: MT N3
-mapt4  = fmap :: MT N4
-mapt8  = fmap :: MT N8
+mapt0  = fmap :: MT  N0
+mapt1  = fmap :: MT  N1
+mapt2  = fmap :: MT  N2
+mapt3  = fmap :: MT  N3
+mapt4  = fmap :: MT  N4
+mapt8  = fmap :: MT  N8
 mapt16 = fmap :: MT N16
 #endif
 
