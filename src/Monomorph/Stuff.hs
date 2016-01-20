@@ -17,7 +17,9 @@
 -- Monomorphizing GHC Core
 ----------------------------------------------------------------------
 
-module Monomorph.Stuff (externals,monomorphizeR) where
+module Monomorph.Stuff
+  ( externals,preMonoR,monomorphizeR,monomorphizeE,simplifyE
+  ) where
 
 -- TODO: Trim exports
 
@@ -290,15 +292,15 @@ isPrimVar v = fqVarName v `S.member` primNames
 -- | Various single-step cast-floating rewrite
 castFloatR :: ReExpr
 castFloatR =
-     {- watchR "castFloatAppR"     -} castFloatAppR
-  <+ {- watchR "castFloatLamR"     -} castFloatLamR
-  <+ {- watchR "castFloatCaseR"    -} castFloatCaseR
-  <+ {- watchR "castCastR"         -} castCastR
-  <+ {- watchR "castElimReflR"     -} castElimReflR
-  <+ {- watchR "castElimSymR "     -} castElimSymR
-  <+ {- watchR "optimizeCastR"     -} optimizeCastR
-  <+ {- watchR "castFloatLetRhsR"  -} castFloatLetRhsR
-  <+ {- watchR "castFloatLetBodyR" -} castFloatLetBodyR
+     watchR "castFloatAppR'"    castFloatAppR'
+  <+ watchR "castFloatLamR"     castFloatLamR
+  <+ watchR "castFloatCaseR"    castFloatCaseR
+  <+ watchR "castCastR"         castCastR
+  <+ watchR "castElimReflR"     castElimReflR
+  <+ watchR "castElimSymR "     castElimSymR
+  <+ watchR "optimizeCastR"     optimizeCastR
+  <+ watchR "castFloatLetRhsR"  castFloatLetRhsR
+  <+ watchR "castFloatLetBodyR" castFloatLetBodyR
 
 isPolyTy :: Type -> Bool
 isPolyTy (coreView -> Just ty) = isPolyTy ty
@@ -368,8 +370,8 @@ simplifyPlusE = watchR "simplifyPlusE" $
 simplifyOneStepE :: ReExpr
 simplifyOneStepE = -- watchR "simplifyOneStepE" $
      nowatchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
-  -- <+ nowatchR "betaReducePlusSafer" betaReducePlusSafer
-  <+ nowatchR "betaReduceR" betaReduceR  -- or betaReducePlusSafer?
+  <+ nowatchR "betaReducePlusSafer" betaReducePlusSafer
+  -- <+ nowatchR "betaReduceR" betaReduceR  -- or betaReducePlusSafer?
   <+ nowatchR "letElimR" letElimR
   <+ nowatchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
   <+ nowatchR "caseReduceR" (caseReduceR False)
@@ -412,18 +414,23 @@ preMonoR = promoteR cseGutsR  -- frequently finds common dictionaries. always su
  where
    letFloatR = promoteR letFloatExprR <+ promoteR letFloatTopR
 
--- | Monomorphize.
+-- | Monomorphize
+monomorphizeE :: ReExpr
+monomorphizeE = anytdE monomorphize1
+
+-- | Monomorphize
 monomorphizeR :: ReCore
 monomorphizeR =
 #if 0
-  anytdR (promoteR monomorphizeE)
+  anytdR (promoteR monomorphize1)
 #else
   promoteR monoGutsR
 #endif
   . tryR preMonoR
 
-monomorphizeE :: ReExpr
-monomorphizeE = repeatR (simplifyPlusE <+ standardizeCase <+ standardizeCon <+ unfoldPolyR)
+-- Repeated monomorphization at expression top-level.
+monomorphize1 :: ReExpr
+monomorphize1 = repeatR (simplifyPlusE <+ standardizeCase <+ standardizeCon <+ unfoldPolyR)
 
 -- any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly))
 
@@ -433,7 +440,7 @@ monoProgR = -- bracketR "monoProgR" $
                  -- observeFailureR "Monomorphization failure" $
                  observeR "monoBindR" .
                  nonRecAllR id (tryR simplifyE
-                                . anytdE monomorphizeE
+                                . anytdE monomorphize1
                                 . tryR (anybuE detickE))) -- for ghci break points
 
 -- TODO: use progBindsAnyR, remove the tryR, and add a tryR elsewhere.
@@ -526,6 +533,7 @@ externals =
     , externC' "unfold-dict-cast" unfoldDictCastR
     , externC' "simplify-was" HD.simplifyR
     , externC' "simplify" simplifyR  -- override HERMIT's simplify
+    , externC' "simplify-mono" simplifyR  -- override HERMIT's simplify
     , externC' "simplify-with-let-floating" simplifyWithLetFloatingR
     , externC' "cast-float-let-rhs" castFloatLetRhsR
     , externC' "cast-float-let-body" castFloatLetBodyR
@@ -548,6 +556,9 @@ externals =
     , externC' "inline-head" inlineHeadR
     , externC' "really-call-data-con" (reallyCallDataCon >> id)
 
+    , externC' "pre-mono" preMonoR
+    , externC' "monomorphize1" monomorphize1
+    , externC' "monomorphizeE" monomorphizeE
     , externC' "monomorphize" monomorphizeR
     , externC' "mono-guts" monoGutsR
     , externC' "detick" detickE
