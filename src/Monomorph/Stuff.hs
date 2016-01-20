@@ -18,7 +18,8 @@
 ----------------------------------------------------------------------
 
 module Monomorph.Stuff
-  ( externals,preMonoR,monomorphizeR,monomorphizeE,simplifyE
+  ( externals,preMonoR,monomorphizeR,monomorphizeE
+  , simplifyE, simplifyWithLetFloatingE
   ) where
 
 -- TODO: Trim exports
@@ -93,6 +94,12 @@ castFloatLetBodyR =
 detickE :: ReExpr
 detickE = tickT id id (const id)
 
+checkTy :: Type -> ReExpr
+checkTy goalTy =
+  do e <- id
+     guardMsg (exprType e == goalTy) "Missed goal type"
+     return e
+
 {--------------------------------------------------------------------
     Observing
 --------------------------------------------------------------------}
@@ -137,7 +144,8 @@ hasRepMethodF =
      guardMsg (not (isEqPred ty)) "Predicate type"  -- still needed?
      guardMsg (closedType ty) "Type has free variables"
      hasRepTc <- findTyConT (repName "HasRep")
-     dict  <- prefixFailMsg "Couldn't build dictionary." $
+     tyStr <- showPprT $* ty
+     dict  <- prefixFailMsg ("Couldn't build HasRep dictionary for " ++ tyStr) $
               buildDictionaryT $* TyConApp hasRepTc [ty]
      repTc <- findTyConT (repName "Rep")
      (mkEqBox -> eq,ty') <- prefixFailMsg "normaliseTypeT failed: "$
@@ -155,6 +163,10 @@ hasRepMethodF =
 hasRepMethodT :: TransformH Type (String -> ReExpr)
 hasRepMethodT = (\ f -> \ s -> App <$> f s <*> id) <$> hasRepMethodF
 
+-- Convenient form for just one method.
+hasRepMethod :: String -> TransformH Type CoreExpr
+hasRepMethod meth = hasRepMethodF >>= ($ meth)
+
 -- In Core, abst is
 -- abst ty $hasRepTy ty' (Eq# * ty' (Rep ty) (sym (co :: Rep ty ~ ty'))),
 -- where e :: ty, and co normalizes Rep ty to ty'.
@@ -164,6 +176,23 @@ abstRepr :: ReExpr
 abstRepr = -- watchR "abstRepr" $
            do meth <- hasRepMethodT . exprTypeT
               meth "abst" . meth "repr"
+
+-- | Convert a cast expression to an application of abst or repr.
+--    e |> (co :: Rep v ~R v)  --> (abst @ u) e
+--    e |> (co :: u ~R Rep u)  --> (repr @ v) e
+castToRepMethod :: ReExpr
+castToRepMethod =
+  prefixFailMsg "castToRepMethod failed: " $
+  withPatFailMsg "Not a cast" $
+  do Cast e (coercionKind -> Pair dom ran) <- id
+     let needTy = FunTy dom ran
+     f <- try "abst" ran needTy <+ try "repr" dom needTy
+     return (App f e)
+ where
+   try meth instTy goalTy = (checkTy goalTy . hasRepMethod meth) $* instTy
+
+-- repr :: a -> Rep a
+-- abst :: Rep a -> a
 
 {--------------------------------------------------------------------
     Transformations
@@ -372,13 +401,19 @@ simplifyOneStepE = -- watchR "simplifyOneStepE" $
      nowatchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
   <+ nowatchR "betaReducePlusSafer" betaReducePlusSafer
   -- <+ nowatchR "betaReduceR" betaReduceR  -- or betaReducePlusSafer?
+  <+ nowatchR "etaReduceR" etaReduceR
   <+ nowatchR "letElimR" letElimR
   <+ nowatchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
-  <+ nowatchR "caseReduceR" (caseReduceR False)
+  <+   watchR "castToRepMethod" castToRepMethod
   <+ nowatchR "castFloatR" castFloatR
+  <+ nowatchR "caseReduceR" (caseReduceR False)
   <+ nowatchR "caseReducePlusR" caseReducePlusR
   <+ nowatchR "caseFloatCaseR" caseFloatCaseR
   <+ nowatchR "caseDefaultR" caseDefaultR
+
+simplifyWithLetFloatingE :: ReExpr
+simplifyWithLetFloatingE = -- watchR "simplifyWithLetFloatingE" $
+                           extractR simplifyWithLetFloatingR
 
 simplifyWithLetFloatingR :: ReLCore
 simplifyWithLetFloatingR =
@@ -555,6 +590,7 @@ externals =
     , externC' "beta-reduce-plus-safer" betaReducePlusSafer
     , externC' "inline-head" inlineHeadR
     , externC' "really-call-data-con" (reallyCallDataCon >> id)
+    , externC' "cast-to-repmeth" castToRepMethod
 
     , externC' "pre-mono" preMonoR
     , externC' "monomorphize1" monomorphize1
