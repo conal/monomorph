@@ -32,7 +32,7 @@ import HERMIT.Plugin
 import HERMIT.Plugin.Renderer (changeRenderer)
 import HERMIT.Plugin.Types (PluginM)
 import HERMIT.PrettyPrinter.Common
-import Monomorph.Stuff
+import Monomorph.Stuff (monomorphizeR)
 
 plugin :: Plugin
 plugin = hermitPlugin (pass 0 . const plug)
