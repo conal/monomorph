@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, ViewPatterns, LambdaCase #-}
+{-# LANGUAGE CPP, PatternSynonyms, ViewPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -88,11 +88,6 @@ castFloatLetBodyR =
        Cast (Let bind body) co
 
 -- TODO: What if variables from 'bind' occur freely in co?
-
--- Declutter diagnostic output in GHCi
-
-detickE :: ReExpr
-detickE = tickT id id (const id)
 
 checkTy :: Type -> ReExpr
 checkTy goalTy =
@@ -193,6 +188,27 @@ castToRepMethod =
 
 -- repr :: a -> Rep a
 -- abst :: Rep a -> a
+
+-- | Given (e |> (c :: (u -> v) ~ (u -> v'))), eta-expand e, apply
+-- castFloatAppR *in reverse* to get \ u -> (e u) |> (?? :: v ~ v'), and then
+-- apply castToRepMethod to get \ u -> meth (e u), where meth is repr or abstr.
+-- (Or forget $\eta$-expansion and just use meth . e.) Try this transformation
+-- as one path in castToRepMethod to repeatedly, recursively progress toward the
+-- simple form.
+castFunCo :: ReExpr
+castFunCo =
+  prefixFailMsg "castFunCo failed: " $
+  withPatFailMsg "Not a cast." $
+  do Cast e (FunCo _r (Refl _ _) vco) <- idR
+     (lamAllR id (arr (`Cast` vco)) . etaExpandR "w") $* e
+
+-- | Convert a cast to a @HasRep@ method application, possibly applying
+-- 'castFunCo' one or more times in preparation.
+castToRepMethodPlus :: ReExpr
+castToRepMethodPlus =  (lamAllR id castToRepMethodPlus . castFunCo)
+                    <+ castToRepMethod
+
+-- I wonder whether I'll have to handle fancier coercions, e.g., without fancier domain coercions.
 
 {--------------------------------------------------------------------
     Transformations
@@ -404,7 +420,7 @@ simplifyOneStepE = -- watchR "simplifyOneStepE" $
   <+ nowatchR "etaReduceR" etaReduceR
   <+ nowatchR "letElimR" letElimR
   <+ nowatchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
-  <+   watchR "castToRepMethod" castToRepMethod
+  <+   watchR "castToRepMethodPlus" castToRepMethodPlus
   <+ nowatchR "castFloatR" castFloatR
   <+ nowatchR "caseReduceR" (caseReduceR False)
   <+ nowatchR "caseReducePlusR" caseReducePlusR
@@ -462,6 +478,7 @@ monomorphizeR =
   promoteR monoGutsR
 #endif
   . tryR preMonoR
+  . tryR (anybuR (promoteR detickE))
 
 -- Repeated monomorphization at expression top-level.
 monomorphize1 :: ReExpr
@@ -474,9 +491,7 @@ monoProgR = -- bracketR "monoProgR" $
   progBindsAnyR (const $
                  -- observeFailureR "Monomorphization failure" $
                  observeR "monoBindR" .
-                 nonRecAllR id (tryR simplifyE
-                                . anytdE monomorphize1
-                                . tryR (anybuE detickE))) -- for ghci break points
+                 nonRecAllR id (tryR simplifyE . monomorphizeE))
 
 -- TODO: use progBindsAnyR, remove the tryR, and add a tryR elsewhere.
 
@@ -591,6 +606,7 @@ externals =
     , externC' "inline-head" inlineHeadR
     , externC' "really-call-data-con" (reallyCallDataCon >> id)
     , externC' "cast-to-repmeth" castToRepMethod
+    , externC' "cast-to-repmeth-plus" castToRepMethodPlus
 
     , externC' "pre-mono" preMonoR
     , externC' "monomorphize1" monomorphize1
