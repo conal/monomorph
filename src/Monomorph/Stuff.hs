@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, PatternSynonyms, ViewPatterns #-}
+{-# LANGUAGE CPP, PatternSynonyms, ViewPatterns, MultiWayIf #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -45,7 +45,7 @@ import qualified HERMIT.Dictionary as HD
 import HERMIT.External (External)
 import HERMIT.GHC
 import HERMIT.Kure
-import HERMIT.Name (HermitName)
+import HERMIT.Name (HermitName,mkQualified)
 
 import HERMIT.Extras hiding (simplifyE)
 
@@ -126,7 +126,7 @@ nowatchR _ = id
 --------------------------------------------------------------------}
 
 repName :: String -> HermitName
-repName = moduledName "Circat.Rep"
+repName = mkQualified "Circat.Rep"
 
 closedType :: Type -> Bool
 closedType = isEmptyVarSet . tyVarsOfType
@@ -199,7 +199,7 @@ castFunCo :: ReExpr
 castFunCo =
   prefixFailMsg "castFunCo failed: " $
   withPatFailMsg "Not a cast." $
-  do Cast e (FunCo _r (Refl _ _) vco) <- idR
+  do Cast e (FunCo _r (Refl _ _) vco) <- id
      (lamAllR id (arr (`Cast` vco)) . etaExpandR "w") $* e
 
 -- | Convert a cast to a @HasRep@ method application, possibly applying
@@ -235,7 +235,7 @@ unfoldDollar = watchR "unfoldDollar" $
 -- Prepare to eliminate non-standard constructor applications (fully saturated).
 standardizeCon :: ReExpr
 standardizeCon = watchR "standardizeCon" $
-                 go . rejectR isType
+                 go . rejectR isTypeArg
  where
    go   = (lamAllR id go . etaExpandR "eta") <+ doit
    doit = (reallyCallDataCon >> simplifyE . appAllR id inlineHeadR . abstRepr)
@@ -266,7 +266,7 @@ caseReducePlusR = setFailMsg "caseReducePlusR failed."
    go =  caseReduceR False
       <+ (letAllR id go . letFloatCaseR)
       <+ (onAltRhss go . caseFloatCaseR)
-      <+ (go . onScrutineeR (unfoldSafeR <+ simplifyE))
+--       <+ (go . onScrutineeR (unfoldSafeR <+ simplifyE))
 
 onAltRhss :: Unop ReExpr
 onAltRhss r = caseAllR id id id (const (altAllR id (const id) r))
@@ -337,15 +337,15 @@ isPrimVar v = fqVarName v `S.member` primNames
 -- | Various single-step cast-floating rewrite
 castFloatR :: ReExpr
 castFloatR =
-     watchR "castFloatAppR'"    castFloatAppR'
-  <+ watchR "castFloatLamR"     castFloatLamR
-  <+ watchR "castFloatCaseR"    castFloatCaseR
-  <+ watchR "castCastR"         castCastR
-  <+ watchR "castElimReflR"     castElimReflR
-  <+ watchR "castElimSymR "     castElimSymR
-  <+ watchR "optimizeCastR"     optimizeCastR
-  <+ watchR "castFloatLetRhsR"  castFloatLetRhsR
-  <+ watchR "castFloatLetBodyR" castFloatLetBodyR
+     nowatchR "castFloatAppR'"    castFloatAppR'
+  <+ nowatchR "castFloatLamR"     castFloatLamR
+  <+ nowatchR "castFloatCaseR"    castFloatCaseR
+  <+ nowatchR "castCastR"         castCastR
+  <+ nowatchR "castElimReflR"     castElimReflR
+  <+ nowatchR "castElimSymR "     castElimSymR
+  <+ nowatchR "optimizeCastR"     optimizeCastR
+  <+ nowatchR "castFloatLetRhsR"  castFloatLetRhsR
+  <+ nowatchR "castFloatLetBodyR" castFloatLetBodyR
 
 isPolyTy :: Type -> Bool
 isPolyTy (coreView -> Just ty) = isPolyTy ty
@@ -378,13 +378,6 @@ unfoldDictCastR :: ReExpr
 unfoldDictCastR = watchR "unfoldDictCastR" $
                   castAllR (unfoldSafeR . acceptR (isDictLikeTy . exprType)) id
 
---    dictish :: Type -> Bool
---    dictish (coreView -> Just ty) = dictish ty
---    dictish (ForAllTy _ ty)       = dictish ty
---    dictish (FunTy dom ran)       = dictish dom || dictish ran
---    dictish ty                    = isDictLikeTy ty
-
-
 -- We exclude regular arguments (not.okayArg) so that the post-unfold simplifyE
 -- doesn't have much to do.
 
@@ -414,18 +407,18 @@ simplifyPlusE = watchR "simplifyPlusE" $
 
 simplifyOneStepE :: ReExpr
 simplifyOneStepE = -- watchR "simplifyOneStepE" $
-     nowatchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
-  <+ nowatchR "betaReducePlusSafer" betaReducePlusSafer
-  -- <+ nowatchR "betaReduceR" betaReduceR  -- or betaReducePlusSafer?
-  <+ nowatchR "etaReduceR" etaReduceR
-  <+ nowatchR "letElimR" letElimR
-  <+ nowatchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
-  <+   watchR "castToRepMethodPlus" castToRepMethodPlus
-  <+ nowatchR "castFloatR" castFloatR
-  <+ nowatchR "caseReduceR" (caseReduceR False)
-  <+ nowatchR "caseReducePlusR" caseReducePlusR
-  <+ nowatchR "caseFloatCaseR" caseFloatCaseR
-  <+ nowatchR "caseDefaultR" caseDefaultR
+     watchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
+  <+ watchR "betaReducePlusSafer" betaReducePlusSafer
+  -- <+ watchR "betaReduceR" betaReduceR  -- or betaReducePlusSafer?
+--   <+ watchR "etaReduceR" etaReduceR
+  <+ watchR "letElimR" letElimR
+  <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
+  <+ watchR "castToRepMethodPlus" castToRepMethodPlus
+  <+ watchR "castFloatR" castFloatR
+  <+ watchR "caseReduceR" (caseReduceR False)
+  <+ watchR "caseReducePlusR" caseReducePlusR
+  <+ watchR "caseFloatCaseR" caseFloatCaseR
+  <+ watchR "caseDefaultR" caseDefaultR
 
 simplifyWithLetFloatingE :: ReExpr
 simplifyWithLetFloatingE = -- watchR "simplifyWithLetFloatingE" $
@@ -452,9 +445,13 @@ letFloatExprNoCastR = setFailMsg "Unsuitable expression for Let floating." $
 caseDefaultR :: ReExpr
 caseDefaultR = prefixFailMsg "caseDefaultR failed: " $
   do Case scrut wild _ [(_,[],body)] <- id
-     case idOccInfo wild of
-       IAmDead -> return body
-       _       -> return (Let (NonRec wild scrut) body)
+     if | isDeadOcc (idOccInfo wild) -> return body
+        | needsCaseBinding (varType wild) scrut ->
+            fail "'case' needed for let/app invariant"
+        | otherwise -> return (Let (NonRec wild scrut) body)
+
+-- Warning: As of 2016-01-23, I haven't tested the case of a default-only 'case'
+-- without needing a case binding.
 
 -- Examples go a little faster (< 3%) with the IAmDead test.
 
@@ -467,22 +464,17 @@ preMonoR = promoteR cseGutsR  -- frequently finds common dictionaries. always su
 
 -- | Monomorphize
 monomorphizeE :: ReExpr
-monomorphizeE = anytdE monomorphize1
+monomorphizeE = anytdE (repeatR monomorphize1)
 
 -- | Monomorphize
 monomorphizeR :: ReCore
-monomorphizeR =
-#if 0
-  anytdR (promoteR monomorphize1)
-#else
-  promoteR monoGutsR
-#endif
-  . tryR preMonoR
-  . tryR (anybuR (promoteR detickE))
+monomorphizeR = promoteR monoGutsR
+              . tryR preMonoR
+              . tryR (anybuR (promoteR detickE))
 
 -- Repeated monomorphization at expression top-level.
 monomorphize1 :: ReExpr
-monomorphize1 = repeatR (simplifyPlusE <+ standardizeCase <+ standardizeCon <+ unfoldPolyR)
+monomorphize1 = simplifyOneStepE{- simplifyPlusE -} <+ standardizeCase <+ standardizeCon <+ unfoldPolyR
 
 -- any-td (repeat (simplify-one-step <+ standardize-case <+ standardize-con <+ unfold-poly))
 
