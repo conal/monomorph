@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP, PatternSynonyms, ViewPatterns, MultiWayIf #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, ConstraintKinds #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- {-# OPTIONS_GHC -fno-warn-unused-imports #-} -- TEMP
@@ -17,9 +17,17 @@
 -- Monomorphizing GHC Core
 ----------------------------------------------------------------------
 
+-- #define MonoCase
+
 module Monomorph.Stuff
   ( externals,preMonoR,monomorphizeR,monomorphizeE
   , simplifyE, simplifyWithLetFloatingE
+  , castFloatR
+  , standardizeCase, standardizeCon
+  , hasRepMethodF
+#ifdef MonoCase
+  , pruneCaseR
+#endif
   ) where
 
 -- TODO: Trim exports
@@ -32,9 +40,8 @@ import Control.Arrow (arr)
 import Data.List (isPrefixOf)
 import qualified Data.Set as S
 
--- #define CaseMono
 #ifdef MonoCase
-import Data.List (partition)
+-- import Data.List (partition)
 import Data.Traversable (mapAccumL)
 import Data.Maybe (catMaybes,isJust)
 import qualified Type  -- from GHC
@@ -46,6 +53,8 @@ import HERMIT.External (External)
 import HERMIT.GHC
 import HERMIT.Kure
 import HERMIT.Name (HermitName,mkQualified)
+import HERMIT.Context (ReadBindings,LemmaContext)
+import HERMIT.Monad (HasHermitMEnv,LiftCoreM,HasLemmas)
 
 import HERMIT.Extras hiding (simplifyE)
 
@@ -59,9 +68,6 @@ import HERMIT.Extras hiding (simplifyE)
 
 lintCheckE :: ReExpr
 lintCheckE = watchR "lintCheckE" id
-
-onScrutineeR :: Unop ReExpr
-onScrutineeR r = caseAllR r id id (const id)
 
 -- | let v = rhs |> co in body
 -- --> let v = (let v' = rhs in v') |> co in body
@@ -111,7 +117,12 @@ watchR lab r = lintingExprR lab (labeled observing (lab,r)) -- hard error
 -- watchR :: String -> Unop ReExpr
 -- watchR lab r = labeled observing (lab,r) >>> lintExprR  -- Fail softly on core lint error.
 
-watchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
+type Watchable c m =
+  ( ReadBindings c, ReadCrumb c, LemmaContext c
+  , HasHermitMEnv m, HasLemmas m, LiftCoreM m, MonadCatch m )
+
+-- watchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
+watchR :: (Watchable c m, InCoreTC a) => String -> Unop (Rewrite c m a)
 watchR lab r = labeled' observing (lab,r)  -- don't lint
 
 nowatchR :: InCoreTC a => String -> RewriteH a -> RewriteH a
@@ -128,8 +139,8 @@ nowatchR _ = id
 repName :: String -> HermitName
 repName = mkQualified "Circat.Rep"
 
-closedType :: Type -> Bool
-closedType = isEmptyVarSet . tyVarsOfType
+-- closedType :: Type -> Bool
+-- closedType = isEmptyVarSet . tyVarsOfType
 
 hasRepMethodF :: TransformH Type (String -> TransformH a CoreExpr)
 hasRepMethodF =
@@ -137,7 +148,7 @@ hasRepMethodF =
   do ty <- id
      -- The following check avoids a problem in buildDictionary.
      guardMsg (not (isEqPred ty)) "Predicate type"  -- still needed?
-     guardMsg (closedType ty) "Type has free variables"
+     -- guardMsg (closedType ty) "Type has free variables"
      hasRepTc <- findTyConT (repName "HasRep")
      tyStr <- showPprT $* ty
      dict  <- prefixFailMsg ("Couldn't build HasRep dictionary for " ++ tyStr) $
@@ -389,7 +400,7 @@ okayToSubst :: CoreExpr -> Bool
 okayToSubst (Var _)   = True
 okayToSubst (Type _)  = True
 okayToSubst (Lam _ e) = okayToSubst e
-okayToSubst ty        = polyOrPredTy (exprType ty)
+okayToSubst e        = polyOrPredTy (exprType e)
 
 simplifyE :: ReExpr
 simplifyE = {- watchR "simplifyE" $ -} extractR simplifyR
@@ -413,7 +424,8 @@ simplifyOneStepE = -- watchR "simplifyOneStepE" $
 --   <+ watchR "etaReduceR" etaReduceR
   <+ watchR "letElimR" letElimR
   <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
-  <+ watchR "castToRepMethodPlus" castToRepMethodPlus
+  -- out for now, while testing new monomorphization
+--   <+ watchR "castToRepMethodPlus" castToRepMethodPlus
   <+ watchR "castFloatR" castFloatR
   <+ watchR "caseReduceR" (caseReduceR False)
   <+ watchR "caseReducePlusR" caseReducePlusR
@@ -505,7 +517,7 @@ observeProgR = traceR "finish!"
 
 #ifdef MonoCase
 {--------------------------------------------------------------------
-    Attempts at case monomorphization/pruning.
+    Attempts at case monomorphization/prniung.
 --------------------------------------------------------------------}
 
 -- Not working, and I don't know how to solve. See my journal for 2015-01-16.
@@ -524,11 +536,15 @@ observeProgR = traceR "finish!"
 
 -- Oops. Since I don't substitute into RHSs in this version, I lose monomorphism.
 
-pruneCaseR :: ReExpr
+-- pruneCaseR :: ReExpr
+pruneCaseR :: Watchable c m => Rewrite c m CoreExpr
 pruneCaseR = watchR "pruneCaseR" $
   do Case e w ty (map monoAlt -> mbAlts) <- id
+     guardMsg (length mbAlts > 1) "Already one or no alternative"
      guardMsg (not (all isJust mbAlts)) "No impossible alternatives"
      return (Case e w ty (catMaybes mbAlts))
+
+--  (setIdType w (exprType e)) ?
 
 monoAlt :: CoreAlt -> Maybe CoreAlt
 monoAlt (con,vs,rhs) = tweak <$> mbSub
@@ -544,7 +560,7 @@ monoAlt (con,vs,rhs) = tweak <$> mbSub
          v' = setVarName
                 (setVarType v (Type.substTy tvSub (varType v)))
                 (varName v)  -- change
-   (coVars,filter isId -> ids) = partition isCoVar vs
+   -- (coVars,filter isId -> ids) = partition isCoVar vs
    mbSub = uncurry (tcUnifyTys (const BindMe))
              (unzip (coVarKind <$> filter isCoVar vs))
 
@@ -558,7 +574,7 @@ tvSubstToSubst (TvSubst in_scope tenv) =
 #endif
 
 {--------------------------------------------------------------------
-    Externals for interactive use
+    Commands for interactive use
 --------------------------------------------------------------------}
 
 externals :: [External]
@@ -607,10 +623,12 @@ externals =
     , externC' "mono-guts" monoGutsR
     , externC' "detick" detickE
     , externC' "observe-prog" observeProgR
+#ifdef MonoCase
+    , externC' "prune-case" pruneCaseR
+#endif
     ]
 
 #if 0
-    , externC' "prune-case" pruneCaseR
     , externC' "standardize-con'" standardizeCon'
     , externC' "beta-reduce-safe" betaReduceSafeR
     , externC' "inline-worker" inlineWorkerR
