@@ -22,7 +22,7 @@
 module Monomorph.Stuff
   ( externals,preMonoR,monomorphizeR,monomorphizeE
   , simplifyE, simplifyWithLetFloatingE
-  , castFloatR
+  , castFloatR, caseDefaultR
   , standardizeCase, standardizeCon
   , hasRepMethodF
 #ifdef MonoCase
@@ -147,11 +147,11 @@ hasRepMethodF =
   prefixFailMsg "hasRepMethodF failed: " $
   do ty <- id
      -- The following check avoids a problem in buildDictionary.
-     guardMsg (not (isEqPred ty)) "Predicate type"  -- still needed?
-     -- guardMsg (closedType ty) "Type has free variables"
+     guardMsg (not (isEqPred ty)) "Predicate type. "  -- still needed?
+     -- guardMsg (closedType ty) "Type has free variables. "
      hasRepTc <- findTyConT (repName "HasRep")
      tyStr <- showPprT $* ty
-     dict  <- prefixFailMsg ("Couldn't build HasRep dictionary for " ++ tyStr) $
+     dict  <- prefixFailMsg ("Couldn't build HasRep dictionary for " ++ tyStr ++ ". ") $
               buildDictionaryT $* TyConApp hasRepTc [ty]
      repTc <- findTyConT (repName "Rep")
      (mkEqBox -> eq,ty') <- prefixFailMsg "normaliseTypeT failed: "$
