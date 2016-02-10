@@ -24,7 +24,7 @@ module Monomorph.Stuff
   , simplifyE, simplifyWithLetFloatingE
   , castFloatR, caseDefaultR
   , standardizeCase, standardizeCon
-  , hasRepMethodF
+  , hasRepMethodF, hasRepMethod, hasRepMethodT
 #ifdef MonoCase
   , pruneCaseR
 #endif
