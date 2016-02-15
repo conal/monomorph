@@ -21,7 +21,7 @@
 
 module Monomorph.Stuff
   ( externals,preMonoR,monomorphizeR,monomorphizeE
-  , simplifyE, simplifyWithLetFloatingE
+  , simplifyE, simplifyWithLetFloatingE, betaReducePlusSaferR
   , castFloatR, caseDefaultR
   , standardizeCase, standardizeCon
   , hasRepMethodF, hasRepMethod, hasRepMethodT
@@ -152,7 +152,7 @@ hasRepMethodF =
      hasRepTc <- findTyConT (repName "HasRep")
      tyStr <- showPprT $* ty
      dict  <- prefixFailMsg ("Couldn't build HasRep dictionary for " ++ tyStr ++ ". ") $
-              buildDictionaryT $* TyConApp hasRepTc [ty]
+              buildDictionaryT' $* TyConApp hasRepTc [ty]
      repTc <- findTyConT (repName "Rep")
      (mkEqBox -> eq,ty') <- prefixFailMsg "normaliseTypeT failed: "$
                             normaliseTypeT Nominal $* TyConApp repTc [ty]
@@ -290,7 +290,7 @@ isCase _         = False
 unfoldSafeR :: ReExpr
 unfoldSafeR = prefixFailMsg "unfoldSafeR failed: " $
   callPredT (\ v _ -> not (isRepMeth v)) >>
-  tryR betaReducePlusSafer . inlineHeadR
+  tryR betaReducePlusSaferR . inlineHeadR
 
 inlineHeadR :: ReExpr
 inlineHeadR = {- watchR "inlineHeadR" -} go
@@ -308,8 +308,8 @@ isRepMeth = (`elem` ["Circat.Rep.abst","Circat.Rep.repr"]) . fqVarName
 unfoldPredSafeR :: (Id -> [CoreExpr] -> Bool) -> ReExpr
 unfoldPredSafeR p = callPredT p >> unfoldSafeR
 
-betaReducePlusSafer :: ReExpr
-betaReducePlusSafer = betaReduceSafePlusR (arr okayToSubst)
+betaReducePlusSaferR :: ReExpr
+betaReducePlusSaferR = betaReduceSafePlusR (arr okayToSubst)
 
 -- Since we're traversing top-down, the eta-expand will only happen if necessary.
 -- etaExpandR dies on Type t. Avoided via rejectR isType
@@ -419,8 +419,8 @@ simplifyPlusE = watchR "simplifyPlusE" $
 simplifyOneStepE :: ReExpr
 simplifyOneStepE = -- watchR "simplifyOneStepE" $
      watchR "unfoldBasicCombinatorR" unfoldBasicCombinatorR
-  <+ watchR "betaReducePlusSafer" betaReducePlusSafer
-  -- <+ watchR "betaReduceR" betaReduceR  -- or betaReducePlusSafer?
+  <+ watchR "betaReducePlusSaferR" betaReducePlusSaferR
+  -- <+ watchR "betaReduceR" betaReduceR  -- or betaReducePlusSaferR?
 --   <+ watchR "etaReduceR" etaReduceR
   <+ watchR "letElimR" letElimR
   <+ watchR "letNonRecSubstSaferR" letNonRecSubstSaferR -- tweaked
@@ -610,7 +610,7 @@ externals =
     , externC' "lint-check" lintCheckE
     , externC' "let-float-expr-no-cast" letFloatExprNoCastR
     , externC' "case-reduce-plus" caseReducePlusR
-    , externC' "beta-reduce-plus-safer" betaReducePlusSafer
+    , externC' "beta-reduce-plus-safer" betaReducePlusSaferR
     , externC' "inline-head" inlineHeadR
     , externC' "really-call-data-con" (reallyCallDataCon >> id)
     , externC' "cast-to-repmeth" castToRepMethod
